@@ -10,7 +10,7 @@ export default function SettingsPage() {
           href="/"
           className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
         >
-          &larr; All dates
+          &larr; Home
         </a>
         <h1 className="text-3xl font-bold mt-2 mb-6 text-zinc-900 dark:text-zinc-100">
           Current AI Settings

@@ -25,7 +25,7 @@ export default function Home() {
           <div>
             <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100 mb-4">Date</h2>
             <ul className="space-y-2">
-              {dates.map((date) => (
+              {dates.slice(0, 8).map((date) => (
                 <li key={date}>
                   <a
                     href={`/${date}/index.html`}
@@ -36,6 +36,14 @@ export default function Home() {
                 </li>
               ))}
             </ul>
+            {dates.length > 8 && (
+              <a
+                href="/all-dates/index.html"
+                className="inline-block mt-4 text-lg text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                View all dates &rarr;
+              </a>
+            )}
           </div>
           <div className="mt-6 md:mt-0">
             <img
