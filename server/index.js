@@ -5,12 +5,14 @@
 import { authenticate, downloadFile, listClips } from './lib/blink-manager.js';
 import { Storage } from './lib/storage.js';
 import { AIProvider } from './lib/ai-provider.js';
+import { pruneOldData } from './lib/retention.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import 'dotenv/config'
 
 // Configuration
 const CHECK_INTERVAL = parseInt(process.env.CHECK_INTERVAL || 600000); // 10 minutes default
+const RETENTION_DAYS = parseInt(process.env.RETENTION_DAYS || 60);
 
 // Persistence / AI
 let storage;
@@ -141,6 +143,12 @@ async function processClips(clips) {
  * Check for new clips and process them
  */
 async function checkAndProcessClips() {
+  try {
+    await pruneOldData(storage, process.env.DOWNLOAD_DIR, RETENTION_DAYS);
+  } catch (error) {
+    console.error('Error pruning old data:', error);
+  }
+
   let clips = await checkForNewClips();
   clips = await processClips(clips);
 

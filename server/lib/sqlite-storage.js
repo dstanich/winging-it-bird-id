@@ -240,4 +240,22 @@ export class SQLiteStorage {
         }
         return result;
     }
+
+    pruneClipsBefore(cutoffIso) {
+        const deleteIdents = this.db.prepare(
+            'DELETE FROM identifications WHERE clip_id IN (SELECT id FROM clips WHERE created_at < ?)'
+        );
+        const deleteClips = this.db.prepare('DELETE FROM clips WHERE created_at < ?');
+
+        const transaction = this.db.transaction((cutoff) => {
+            const identsResult = deleteIdents.run(cutoff);
+            const clipsResult = deleteClips.run(cutoff);
+            return {
+                identificationsDeleted: identsResult.changes,
+                clipsDeleted: clipsResult.changes,
+            };
+        });
+
+        return transaction(cutoffIso);
+    }
 }

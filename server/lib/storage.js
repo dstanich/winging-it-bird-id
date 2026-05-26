@@ -90,4 +90,13 @@ export class Storage {
     deleteSetting(id) {
         return this.provider.deleteSetting(id);
     }
+
+    /**
+     * Deletes clips (and their identifications) with created_at strictly before the cutoff.
+     * @param {string} cutoffIso - ISO 8601 timestamp; rows with created_at < cutoff are removed.
+     * @returns {{ clipsDeleted: number, identificationsDeleted: number }}
+     */
+    pruneClipsBefore(cutoffIso) {
+        return this.provider.pruneClipsBefore(cutoffIso);
+    }
 }

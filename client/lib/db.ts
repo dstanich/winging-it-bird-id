@@ -39,6 +39,9 @@ export interface DateGroup {
   clips: Clip[];
 }
 
+const RETENTION_DAYS = parseInt(process.env.RETENTION_DAYS || "60", 10);
+const cutoffIso = new Date(Date.now() - RETENTION_DAYS * 1000 * 60 * 60 * 24).toISOString();
+
 function getDb() {
   const dbPath = path.join(process.cwd(), "data", "bird-data.db");
   return new Database(dbPath, { readonly: true });
@@ -96,8 +99,8 @@ export function getAvailableDates(): string[] {
   const db = getDb();
 
   const rows = db
-    .prepare(`SELECT DISTINCT created_at FROM clips ORDER BY created_at DESC`)
-    .all() as { created_at: string }[];
+    .prepare(`SELECT DISTINCT created_at FROM clips WHERE created_at >= ? ORDER BY created_at DESC`)
+    .all(cutoffIso) as { created_at: string }[];
 
   db.close();
 
@@ -124,9 +127,10 @@ export function getClipsForDate(date: string): Clip[] {
        FROM clips c
        LEFT JOIN identifications i ON c.id = i.clip_id
        LEFT JOIN settings s ON i.ai_model_id = s.id
+       WHERE c.created_at >= ?
        ORDER BY c.created_at DESC`
     )
-    .all() as ClipRow[];
+    .all(cutoffIso) as ClipRow[];
 
   db.close();
 

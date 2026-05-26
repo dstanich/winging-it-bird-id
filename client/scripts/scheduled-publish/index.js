@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, statSync, cpSync, existsSync } from "node:fs
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import mime from "mime";
-import { S3Client, PutObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from "@aws-sdk/client-s3";
 import {
   CloudFrontClient,
   CreateInvalidationCommand,
@@ -14,6 +14,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url)); // workaround to
 const CLIENT_DIR = process.env.SCHEDULED_PUBLISH_CLIENT_DIR || path.resolve(__dirname, "../..");
 const OUT_DIR = path.join(CLIENT_DIR, "out");
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+const MIN_FILES_FOR_DELETION = 10; // Minimum local file count required to allow S3 deletion. Guards against a broken build wiping the bucket.
 
 // Build Next.js app into static files
 function build() {
@@ -78,6 +79,7 @@ async function uploadToS3() {
   }
 
   const files = readdirSync(OUT_DIR, { recursive: true });
+  const localKeys = new Set();
   let uploaded = 0;
   let skipped = 0;
   let errors = 0;
@@ -92,6 +94,7 @@ async function uploadToS3() {
     const key = prefix
       ? `${prefix}/${relativePath}`
       : relativePath.toString();
+    localKeys.add(key);
 
     try {
       const body = readFileSync(fullPath);
@@ -124,9 +127,60 @@ async function uploadToS3() {
     `Upload complete: ${uploaded} uploaded, ${skipped} skipped (unchanged), ${errors} errors.`
   );
 
-  if (uploaded > 0) {
+  const deleted = await deleteStaleS3Objects(s3, bucket, existingETags, localKeys);
+
+  if (uploaded > 0 || deleted > 0) {
     await invalidateCloudFront();
   }
+}
+
+// Delete S3 objects that are no longer present in the local build output.
+async function deleteStaleS3Objects(s3, bucket, existingETags, localKeys) {
+  if (localKeys.size < MIN_FILES_FOR_DELETION) {
+    console.warn(
+      `Skipping S3 deletion: only ${localKeys.size} local file(s) in build output (minimum: ${MIN_FILES_FOR_DELETION}). ` +
+      `This guards against a broken build wiping the bucket.`
+    );
+    return 0;
+  }
+
+  const staleKeys = [];
+  for (const key of existingETags.keys()) {
+    if (!localKeys.has(key)) {
+      staleKeys.push(key);
+    }
+  }
+
+  if (staleKeys.length === 0) {
+    return 0;
+  }
+
+  console.log(`Deleting ${staleKeys.length} stale object(s) from S3...`);
+
+  let deleted = 0;
+  for (let i = 0; i < staleKeys.length; i += 1000) {
+    const batch = staleKeys.slice(i, i + 1000);
+    try {
+      const response = await s3.send(
+        new DeleteObjectsCommand({
+          Bucket: bucket,
+          Delete: {
+            Objects: batch.map((Key) => ({ Key })),
+            Quiet: true,
+          },
+        })
+      );
+      deleted += batch.length - (response.Errors?.length || 0);
+      for (const err of response.Errors || []) {
+        console.error(`Failed to delete ${err.Key}: ${err.Message}`);
+      }
+    } catch (error) {
+      console.error(`Failed to delete batch starting at index ${i}:`, error.message);
+    }
+  }
+
+  console.log(`Deleted ${deleted} stale object(s) from S3.`);
+  return deleted;
 }
 
 // Invalidate CloudFront so that the newly uploaded content will be served without waiting for cache.
