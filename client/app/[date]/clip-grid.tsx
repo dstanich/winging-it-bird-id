@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Clip } from "@/lib/db";
 
 type Filter = "all" | "birds" | "non-birds";
@@ -13,6 +13,16 @@ export function ClipGrid({
   clipTimes: Record<string, string>;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
+  const [selectedClip, setSelectedClip] = useState<Clip | null>(null);
+
+  useEffect(() => {
+    if (!selectedClip) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelectedClip(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedClip]);
 
   const filtered = clips.filter((clip) => {
     if (filter === "all") return true;
@@ -55,7 +65,8 @@ export function ClipGrid({
               alt={
                 clip.identifications[0]?.species ?? "Unidentified clip"
               }
-              className="w-full aspect-video object-cover"
+              className="w-full aspect-video object-cover cursor-pointer"
+              onClick={() => setSelectedClip(clip)}
             />
             <div className="p-2">
               {clip.identifications.length === 0 && (
@@ -104,6 +115,31 @@ export function ClipGrid({
           </div>
         ))}
       </div>
+      {selectedClip && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setSelectedClip(null)}
+        >
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={() => setSelectedClip(null)}
+            className="absolute top-4 right-4 text-white text-3xl leading-none"
+          >
+            &times;
+          </button>
+          <img
+            src={`/${selectedClip.thumbnailPath}`}
+            alt={
+              selectedClip.identifications[0]?.species ?? "Unidentified clip"
+            }
+            className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </>
   );
 }
