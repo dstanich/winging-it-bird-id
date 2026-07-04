@@ -1,4 +1,5 @@
 import { getAvailableDates, formatDateHeading } from "@/lib/db";
+import { pageHref } from "@/lib/links";
 
 export default function Home() {
   const dates = getAvailableDates();
@@ -16,7 +17,7 @@ export default function Home() {
           </a>
         </div>
         <p className="max-w-2xl mb-8 text-zinc-600 dark:text-zinc-400">
-          AI powered bird identifications (<a href="/settings/index.html" className="text-blue-600 dark:text-blue-400 hover:underline">current AI settings</a>) written in collaboration with GitHub Copilot and Claude Code
+          AI powered bird identifications (<a href={pageHref("/settings")} className="text-blue-600 dark:text-blue-400 hover:underline">current AI settings</a>) written in collaboration with GitHub Copilot and Claude Code
           {' '}(<a href="https://github.com/dstanich/blink-bird-id" target="_blank" className="text-blue-600 dark:text-blue-400 hover:underline">GitHub Repo</a>). Location of camera is in the
           {' '}midwest USA using a Blink camera mounted inside a
           {' '}<a href="https://makerworld.com/en/models/1239253-smart-bird-feeder-with-integrated-wifi-camera" target="_blank" className="text-blue-600 dark:text-blue-400 hover:underline">3D printed bird feeder</a>.
@@ -28,7 +29,7 @@ export default function Home() {
               {dates.slice(0, 8).map((date) => (
                 <li key={date}>
                   <a
-                    href={`/${date}/index.html`}
+                    href={pageHref(`/${date}`)}
                     className="text-lg text-blue-600 dark:text-blue-400 hover:underline"
                   >
                     {formatDateHeading(date)}
@@ -38,7 +39,7 @@ export default function Home() {
             </ul>
             {dates.length > 8 && (
               <a
-                href="/all-dates/index.html"
+                href={pageHref("/all-dates")}
                 className="inline-block mt-4 text-lg text-blue-600 dark:text-blue-400 hover:underline"
               >
                 View all dates &rarr;

@@ -28,7 +28,7 @@ The server is a Node.js application that runs a local FTP server for the camera 
 #### Setup
 
 1. `cd server && npm install`
-2. Copy `.env.example` to `.env` and fill in `GOOGLE_API_KEY` plus the FTP settings: `FTP_HOST`, `FTP_PORT`, `FTP_USERNAME`, `FTP_PASSWORD`.
+2. Copy `.env.example` to `.env` and fill in `GOOGLE_API_KEY` plus the FTP settings: `FTP_HOST`, `FTP_PORT`, `FTP_USERNAME`, `FTP_PASSWORD`, `FTP_PASV_URL`.
 3. In the Reolink camera's own admin settings, configure FTP upload to point at this host/port with the same username/password, so it pushes recordings here on motion.
 4. `npm start` — starts the FTP listener and the periodic clip-processing loop.
 

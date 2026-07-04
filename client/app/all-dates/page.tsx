@@ -1,4 +1,5 @@
 import { getAvailableDates, formatDateHeading } from "@/lib/db";
+import { pageHref } from "@/lib/links";
 
 export default function AllDatesPage() {
   const dates = getAvailableDates();
@@ -19,7 +20,7 @@ export default function AllDatesPage() {
           {dates.map((date) => (
             <li key={date}>
               <a
-                href={`/${date}/index.html`}
+                href={pageHref(`/${date}`)}
                 className="text-lg text-blue-600 dark:text-blue-400 hover:underline"
               >
                 {formatDateHeading(date)}
