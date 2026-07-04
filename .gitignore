@@ -3,35 +3,6 @@
 .env.local
 .env.*.local
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-.venv/
-ENV/
-.uv/
-build/
-develop-eggs/
-dist/
-downloads.egg-info/
-eggs/
-.eggs/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
 # Node
 node_modules/
 
@@ -49,13 +20,6 @@ downloads/
 # Data
 data/
 !data/.gitkeep
-
-# Config
-config/
-!config/.gitkeep
-
-# uv
-uv.lock
 
 # OS
 .DS_Store

@@ -1,29 +1,38 @@
 /**
- * Blink Bird ID - Main Application
+ * Main entry point
  */
 
-import { authenticate, downloadFile, listClips } from './lib/blink-manager.js';
+import { startFtpListener } from './lib/ftp-listener.js';
+import { discoverNewClips } from './lib/ftp-clips.js';
 import { Storage } from './lib/storage.js';
 import { AIProvider } from './lib/ai-provider.js';
 import { pruneOldData } from './lib/retention.js';
 import * as fs from 'fs';
-import * as path from 'path';
 import 'dotenv/config'
 
 // Configuration
 const CHECK_INTERVAL = parseInt(process.env.CHECK_INTERVAL || 600000); // 10 minutes default
 const RETENTION_DAYS = parseInt(process.env.RETENTION_DAYS || 60);
+const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
+const FTP_HOST = process.env.FTP_HOST || '0.0.0.0';
+const FTP_PORT = parseInt(process.env.FTP_PORT || 2121);
+const FTP_USERNAME = process.env.FTP_USERNAME;
+const FTP_PASSWORD = process.env.FTP_PASSWORD;
+const FTP_PASV_URL = process.env.FTP_PASV_URL;
+const FTP_PASV_MIN = parseInt(process.env.FTP_PASV_MIN || 30100);
+const FTP_PASV_MAX = parseInt(process.env.FTP_PASV_MAX || 30110);
 
 // Persistence / AI
 let storage;
 let aiProvider;
+let isProcessing = false;
 
 /**
  * Initialize application
  */
 function initializeApp() {
   const { DOWNLOAD_DIR } = process.env;
-  const dirs = [DOWNLOAD_DIR];
+  const dirs = [DOWNLOAD_DIR, UPLOAD_DIR];
   for (const dir of dirs) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -36,76 +45,14 @@ function initializeApp() {
 }
 
 /**
- * Check for and download new thumbnails
+ * Check for newly uploaded video files and extract thumbnails
  *
- * @returns {Promise<Array>} List of new clips with thumbnails downloaded
+ * @returns {Promise<Array>} List of new clips with thumbnails extracted
  */
 async function checkForNewClips() {
   try {
     console.log('\n=== Checking for new clips ===');
-
-    // Authenticate first
-    console.log('Authenticating with Blink...');
-    const authResult = await authenticate();
-    if (!authResult.success) {
-      console.error('Authentication failed:', authResult.error);
-      return [];
-    }
-    console.log('✓ Authenticated with Blink Cloud');
-
-    // Call blink and get latest clips
-    const sinceTimestamp = Date.now() - 8 * 60 * 60 * 1000; // 8 hours in milliseconds
-    const cmdResult = await listClips(process.env.CAMERA_NAME, new Date(sinceTimestamp).toISOString());
-    if (!cmdResult.success) {
-      console.error('Failed to list clips:', cmdResult.error);
-      return [];
-    }
-    let clips = cmdResult.clips || [];
-    console.log(`✓ Found ${clips.length} clip(s) in total`);
-
-    // Filter out any 'deleted' clips since they may be returned by the API but the data may be bad
-    clips = clips.filter(clip => !clip.deleted);
-    console.log(`✓ ${clips.length} clip(s) after filtering deleted clips`);
-
-    // Filter out any clips already in our database
-    clips = clips.filter(clip => {
-      const clipId = clip.id;
-      if (storage.data(new Date(sinceTimestamp).toISOString())[clipId]) {
-        console.log(`✓ Skipping already processed clip: ${clipId}`);
-        return false;
-      }
-      return true;
-    });
-    console.log(`✓ ${clips.length} new clip(s) to download`);
-
-    for (const clip of clips) {
-      try {
-        const clipDate = new Date(clip.created_at);
-        console.log(`[Clip ${clip.id}] ${clip.created_at} / ${clipDate.getFullYear()} / ${clipDate.getMonth() + 1} / ${clipDate.getDate()}`);
-
-        // Create directory structure based on clip date, if it doesn't exist
-        const clipPath = path.join(`${process.env.DOWNLOAD_DIR}`, `${clipDate.getFullYear()}`, `${clipDate.getMonth() + 1}`, `${clipDate.getDate()}`);
-        if (!fs.existsSync(clipPath)) {
-          fs.mkdirSync(clipPath, { recursive: true });
-          console.log(`Created directory for clip: ${clipPath}`);
-        }
-
-        // Download thumbnail for each clip, if it doesn't exist
-        const thumbnailUrl = clip.thumbnail;
-        const thumbnailPath = path.join(clipPath, `${clip.id}.jpg`);
-        if (fs.existsSync(thumbnailPath)) {
-          console.log(`Thumbnail already exists: ${thumbnailPath}`);
-        } else {
-          console.log(`Downloading thumbnail ${thumbnailUrl} to: ${thumbnailPath}`);
-          await downloadFile(thumbnailUrl, thumbnailPath);
-        }
-        clip.localThumbnailPath = thumbnailPath;
-      } catch (error) {
-        console.error(`Error processing clip ${clip.id}:`, error);
-      }
-    }
-
-    return clips;
+    return await discoverNewClips(storage, UPLOAD_DIR, process.env.DOWNLOAD_DIR, process.env.CAMERA_NAME);
   } catch (error) {
     console.error('Error checking for new clips:', error);
     return [];
@@ -157,27 +104,70 @@ async function checkAndProcessClips() {
     storage.addClip(clip);
   });
   storage.commit();
+
+  // Raw uploads are only needed to produce a thumbnail; once a clip is
+  // successfully committed, remove its video to keep disk usage low. A clip
+  // that failed processing keeps its video so the next tick retries it.
+  clips.forEach(clip => {
+    if (!clip.localVideoPath) return;
+    try {
+      fs.rmSync(clip.localVideoPath, { force: true });
+    } catch (error) {
+      console.error(`Error removing processed video ${clip.localVideoPath}:`, error);
+    }
+  });
 }
 
+/**
+ * Guards against overlapping runs (e.g. if a check takes longer than
+ * CHECK_INTERVAL due to the PROCESS_DELAY throttle in processClips()).
+ */
+async function triggerCheck() {
+  if (isProcessing) {
+    console.log('Skipping check: already processing');
+    return;
+  }
+  isProcessing = true;
+  try {
+    console.log(`\n=== Check: ${new Date().toISOString()} ===`);
+    await checkAndProcessClips();
+  } catch (error) {
+    console.error('Error during check:', error);
+  } finally {
+    isProcessing = false;
+  }
+}
 
 /**
  * Main application loop
  */
 async function main() {
-  console.log('Starting Blink Bird ID Application');
-  console.log('==================================');
+  console.log('Winging It Bird ID Application');
+  console.log('==============================');
 
   initializeApp();
 
+  // FTP upload listener: the camera pushes recorded clips here on motion.
+  // The timer loop below periodically scans for and processes new uploads.
+  await startFtpListener({
+    uploadDir: UPLOAD_DIR,
+    host: FTP_HOST,
+    port: FTP_PORT,
+    username: FTP_USERNAME,
+    password: FTP_PASSWORD,
+    pasvUrl: FTP_PASV_URL,
+    pasvMin: FTP_PASV_MIN,
+    pasvMax: FTP_PASV_MAX,
+  });
+
   // Initial check
   console.log('Initial clip check...');
-  await checkAndProcessClips();
+  await triggerCheck();
 
   // Set up periodic checks
   console.log(`\nScheduling checks every ${CHECK_INTERVAL / 60000} minutes`);
-  setInterval(async () => {
-    console.log(`\nScheduled check triggered: ${new Date().toISOString()}`);
-    await checkAndProcessClips();
+  setInterval(() => {
+    triggerCheck();
   }, CHECK_INTERVAL);
 
   console.log('Application running. Monitoring for new clips...\n');

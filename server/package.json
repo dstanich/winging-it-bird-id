@@ -1,22 +1,21 @@
 {
   "name": "blink-bird-id",
   "version": "1.0.0",
-  "description": "Node.js and Python application to orchestrate downloading recorded clips from Blink Smart Security and identifying birds using AI",
+  "description": "Node.js application to orchestrate downloading recorded clips from a Reolink camera and identifying birds using AI",
   "license": "MIT",
   "author": "David Stanich",
   "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "setup:python": "uv pip install -e .",
-    "auth": "uv run python scripts/blink_manager.py authenticate",
-    "list": "uv run python scripts/blink_manager.py list --camera-name Bird",
-    "download": "uv run python scripts/blink_manager.py download --url 'URL HERE' --save-path testfile.jpg"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
     "@google/genai": "^1.43.0",
     "better-sqlite3": "^12.8.0",
-    "dotenv": "^17.3.1"
+    "dotenv": "^17.3.1",
+    "ffmpeg-static": "^5.3.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "ftp-srv": "^4.6.3"
   }
 }

@@ -4,23 +4,23 @@ This file provides guidance to AI agents such as Claude Code and GitHub Copilot 
 
 ## Project Overview
 
-Hobby project that downloads clips from a Blink Smart Security camera (pointed at a bird feeder), identifies bird species using Google Gemini AI, and logs results. Monorepo with a Node.js + Python backend (`server/`) and a Next.js frontend (`client/`).
+Hobby project that runs a local FTP server for a Reolink camera (pointed at a bird feeder) to push recorded clips to, identifies bird species in each clip using Google Gemini AI, and logs results. Monorepo with a Node.js backend (`server/`) and a Next.js frontend (`client/`).
 
 ## Repository Structure
 
 ```
-├── server/                        # Node.js orchestration + Python Blink API integration
-│   ├── index.js                   # Main polling loop
+├── server/                        # Node.js orchestration + local FTP ingestion
+│   ├── index.js                   # Main entry point: starts FTP listener + periodic processing loop
 │   ├── lib/
 │   │   ├── ai-provider.js         # Gemini AI integration
-│   │   ├── blink-manager.js       # Node.js wrapper for Python subprocess
+│   │   ├── ftp-listener.js        # FTP server (ftp-srv) the camera pushes clips to
+│   │   ├── ftp-clips.js           # Scans uploads, parses filenames, extracts thumbnails (ffmpeg)
+│   │   ├── retention.js           # Prunes clips/identifications/downloads older than RETENTION_DAYS
 │   │   ├── storage.js             # Storage facade
 │   │   └── sqlite-storage.js      # SQLite implementation
-│   ├── scripts/
-│   │   └── blink_manager.py       # Python Blink Cloud API (blinkpy)
 │   ├── data/bird-data.db          # SQLite database
+│   ├── uploads/                   # Raw video files pushed by the camera via FTP (deleted after processing)
 │   ├── downloads/                 # Thumbnails: YYYY/M/D/{clip-id}.jpg
-│   ├── config/.blink_auth         # Blink auth tokens
 │   └── Dockerfile
 ├── client/                        # Next.js static frontend
 │   ├── app/
@@ -44,11 +44,7 @@ There is no root-level `package.json` — each directory manages its own depende
 ### Server (`cd server`)
 
 ```bash
-npm start                  # Run main app (node index.js)
-npm run setup:python       # Install Python deps (uv pip install -e .)
-npm run auth               # Authenticate with Blink camera
-npm run list               # List clips from camera
-npm run download           # Download a specific clip (manual)
+npm start                  # Run main app (node index.js): starts the FTP listener and processing loop
 ```
 
 ### Client (`cd client`)
@@ -63,8 +59,10 @@ npm run lint               # ESLint
 
 ### Server
 
-- **Node.js orchestration layer** (`server/index.js`) — main loop that polls Blink for new clips on a configurable interval (default 2 hours), downloads thumbnails, sends them to Gemini for bird identification (with 30s delay between API calls), and stores results
-- **Python subprocess** (`server/scripts/blink_manager.py`) — handles Blink Cloud API via `blinkpy==0.25.5`. Called from Node.js via `child_process.spawn` with JSON-over-stdout IPC. 30-second timeout per command. Supports 2FA via `BLINK_2FA_CODE` env var.
+- **Node.js orchestration layer** (`server/index.js`) — starts the FTP listener, then runs a periodic loop (`CHECK_INTERVAL`, default 10 minutes) that scans for newly uploaded clips, sends thumbnails to Gemini for bird identification (with `PROCESS_DELAY` between API calls), stores results, and deletes successfully processed videos (failed ones are retried next tick, guarded by an `isProcessing` flag against overlapping runs)
+- **FTP listener** (`server/lib/ftp-listener.js`) — starts an always-on FTP server (`ftp-srv` npm package) on `FTP_HOST:FTP_PORT` that the camera authenticates against (`FTP_USERNAME`/`FTP_PASSWORD`) and pushes recordings to on motion; writes uploads under `UPLOAD_DIR`. Pure plumbing — no clip/AI logic.
+- **Clip discovery** (`server/lib/ftp-clips.js`) — scans `UPLOAD_DIR` for video files, parses Reolink's FTP filename convention `[Camera]_[Channel]_[YYYYMMDDHHMMSS].ext` (falls back to file mtime + `CAMERA_NAME` if unmatched), extracts a JPEG thumbnail via `ffmpeg-static`/`fluent-ffmpeg`, and returns clip objects for anything not already in storage.
+- **Retention** (`server/lib/retention.js`) — on each loop tick, prunes clips/identifications older than `RETENTION_DAYS` from SQLite and removes their corresponding date directories under `downloads/`.
 - **AI provider** (`server/lib/ai-provider.js`) — sends base64-encoded JPEG to Google Gemini (default model: `gemini-2.5-flash`), returns structured JSON with species info. Model and prompt are configurable via the `settings` database table.
 - **Storage** (`server/lib/storage.js`) — facade over a swappable storage provider; delegates to `server/lib/sqlite-storage.js` which persists clips, bird identifications, and settings to a SQLite database (`server/data/bird-data.db`) via `better-sqlite3`. Uses WAL mode.
 
@@ -89,11 +87,10 @@ npm run lint               # ESLint
 
 - ES modules throughout (`"type": "module"` in server package.json)
 - Uses `fileURLToPath` pattern for `__dirname` equivalent in server code
-- Python 3.9+ venv at `server/.venv/`, managed with `uv`
-- Auth tokens stored in `server/config/.blink_auth`
-- Downloads organized by date: `server/downloads/YYYY/M/D/{clip-id}.jpg`
+- Camera pushes clips via FTP; no local network polling or cloud auth — configured entirely via `FTP_HOST`/`FTP_PORT`/`FTP_USERNAME`/`FTP_PASSWORD`/`FTP_PASV_URL`/`FTP_PASV_MIN`/`FTP_PASV_MAX` env vars. `FTP_PASV_URL` must be the LAN IP of the host running the server (required for passive-mode transfers).
+- Uploaded videos land in `UPLOAD_DIR` and are deleted once successfully processed into a thumbnail + DB row; downloads organized by date: `server/downloads/YYYY/M/D/{clip-id}.jpg`
 - Environment config via `.env` in each directory (see `.env.example` for variables)
-- Server Dockerfile: `node:20-slim` base, volumes for `data/`, `downloads/`, `config/`
+- Server Dockerfile: `node:20-slim` base, volumes for `data/`, `downloads/`; exposes FTP control port `2121` and passive port range `30100-30110`
 - Client Dockerfile: runs scheduled-publish script for automated S3 deployments
 - Dark mode supported in frontend (Tailwind `dark:` prefixes)
 - Path alias `@/*` → `./` in client TypeScript config
