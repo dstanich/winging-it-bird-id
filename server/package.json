@@ -1,5 +1,5 @@
 {
-  "name": "blink-bird-id",
+  "name": "winging-it-bird-id",
   "version": "1.0.0",
   "description": "Node.js application to orchestrate downloading recorded clips from a Reolink camera and identifying birds using AI",
   "license": "MIT",
