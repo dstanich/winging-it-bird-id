@@ -12,14 +12,14 @@ export default function Home() {
             <img src="/images/winging-it-512x512.png" alt="Logo" width={40} height={40} />
             Winging-It Bird ID
           </h1>
-          <a href="https://github.com/dstanich/blink-bird-id" target="_blank">
+          <a href="https://github.com/dstanich/winging-it-bird-id" target="_blank">
             <img src="/images/github-mark.svg" alt="GitHub" width={40} height={40} className="dark:invert" />
           </a>
         </div>
         <p className="max-w-2xl mb-8 text-zinc-600 dark:text-zinc-400">
           AI powered bird identifications (<a href={pageHref("/settings")} className="text-blue-600 dark:text-blue-400 hover:underline">current AI settings</a>) written in collaboration with GitHub Copilot and Claude Code
-          {' '}(<a href="https://github.com/dstanich/blink-bird-id" target="_blank" className="text-blue-600 dark:text-blue-400 hover:underline">GitHub Repo</a>). Location of camera is in the
-          {' '}midwest USA using a Blink camera mounted inside a
+          {' '}(<a href="https://github.com/dstanich/winging-it-bird-id" target="_blank" className="text-blue-600 dark:text-blue-400 hover:underline">GitHub Repo</a>). Location of camera is in the
+          {' '}midwest USA using a Reolink camera mounted inside a
           {' '}<a href="https://makerworld.com/en/models/1239253-smart-bird-feeder-with-integrated-wifi-camera" target="_blank" className="text-blue-600 dark:text-blue-400 hover:underline">3D printed bird feeder</a>.
         </p>
         <div className="flex flex-col md:flex-row md:gap-12">

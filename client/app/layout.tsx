@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Winging-It Bird ID",
-  description: "Bird species identified from Blink camera clips",
+  description: "Bird species identified from camera clips",
   icons: {
     icon: "/images/winging-it-32x32.png",
     apple: "/images/winging-it-512x512.png",
