@@ -48,7 +48,7 @@ export default function Home() {
           </div>
           <div className="mt-6 md:mt-0">
             <img
-              src="/images/feeder-20260326.jpg"
+              src="/images/feeder-20260704.jpg"
               alt="Bird feeder camera setup"
               className="w-full max-w-sm rounded-lg"
             />
