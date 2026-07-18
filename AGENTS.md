@@ -29,8 +29,8 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   │   ├── page.tsx               # Home: lists available dates
 │   │   ├── settings/page.tsx      # Shows current AI model/prompt config
 │   │   └── [date]/
-│   │       ├── page.tsx           # Date detail: summary + clip grid
-│   │       └── clip-grid.tsx      # Client component: filter birds/non-birds
+│   │       ├── page.tsx           # Date detail: summary (video + audio stats) + combined feed
+│   │       └── clip-grid.tsx      # Client component: merged video/audio feed, video/audio + birds/non-birds filters, image lightbox
 │   ├── lib/db.ts                  # SQLite queries (build-time only)
 │   ├── data/bird-data.db          # Symlink → server/data/bird-data.db
 │   ├── scripts/scheduled-publish/ # S3 deploy script (build + upload + CloudFront invalidation)
@@ -72,8 +72,9 @@ npm run lint               # ESLint
 
 - **Next.js 16 + React 19** with App Router, TypeScript, and Tailwind CSS v4
 - **Static export** — configured in `next.config.ts` (`output: "export"`, `trailingSlash: true`) for S3 hosting
-- **Routes:** `/` lists available dates; `/[date]/` shows clips and identifications for a given date; `/settings/` shows current AI model and prompt
-- **Data access** (`client/lib/db.ts`) — reads the SQLite database directly via `better-sqlite3` at build time (readonly). All dates use `America/Chicago` timezone, formatted with `en-CA` locale for YYYY-MM-DD URL paths.
+- **Routes:** `/` lists available dates; `/[date]/` shows a combined video + audio feed and summary for a given date; `/settings/` shows current AI model and prompt
+- **Combined feed** (`client/app/[date]/clip-grid.tsx`) — merges video clips and BirdNET-Go audio identifications into a single chronological feed, sorted by timestamp. Independent toggles show/hide video and audio items; a birds/non-birds radio filter (video only) narrows further. Audio items show the cached species clipart (or a fallback emoji), an inline `<audio>` player, and species/confidence. Clicking a video thumbnail or species image opens it in a lightbox modal (closable via click-outside or Escape).
+- **Data access** (`client/lib/db.ts`) — reads the SQLite database directly via `better-sqlite3` at build time (readonly). Exposes `getAudioIdentificationsForDate` (joins `audio_identifications` with `species_images`) alongside `getClipsForDate`; `getAvailableDates` unions dates from both `clips` and `audio_identifications`. `getDateSummary` folds in audio detection count and unique species heard. All dates use `America/Chicago` timezone, formatted with `en-CA` locale for YYYY-MM-DD URL paths.
 - **Symlinked database** — `client/data/bird-data.db` symlinks to `server/data/bird-data.db`
 - **Scheduled publishing** (`client/scripts/scheduled-publish/`) — builds static site, uploads changed files to S3 (skips unchanged via ETag/MD5), optionally invalidates CloudFront
 
