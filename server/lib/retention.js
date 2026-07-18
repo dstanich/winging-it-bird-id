@@ -32,6 +32,11 @@ export async function pruneOldData(storage, downloadDir, retentionDays) {
         console.log(`Pruned ${clipsDeleted} clip(s) and ${identificationsDeleted} identification(s) older than ${cutoffIso}`);
     }
 
+    const { audioIdentificationsDeleted } = storage.pruneAudioIdentificationsBefore(cutoffIso);
+    if (audioIdentificationsDeleted > 0) {
+        console.log(`Pruned ${audioIdentificationsDeleted} audio identification(s) older than ${cutoffIso}`);
+    }
+
     if (!downloadDir || !fs.existsSync(downloadDir)) {
         return;
     }

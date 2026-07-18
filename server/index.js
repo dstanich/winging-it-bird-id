@@ -6,6 +6,7 @@ import { startFtpListener } from './lib/ftp-listener.js';
 import { discoverNewClips } from './lib/ftp-clips.js';
 import { Storage } from './lib/storage.js';
 import { AIProvider } from './lib/ai-provider.js';
+import { BirdNetProvider } from './lib/birdnet-provider.js';
 import { pruneOldData } from './lib/retention.js';
 import * as fs from 'fs';
 import 'dotenv/config'
@@ -21,10 +22,15 @@ const FTP_PASSWORD = process.env.FTP_PASSWORD;
 const FTP_PASV_URL = process.env.FTP_PASV_URL;
 const FTP_PASV_MIN = parseInt(process.env.FTP_PASV_MIN || 30100);
 const FTP_PASV_MAX = parseInt(process.env.FTP_PASV_MAX || 30110);
+const BIRDNET_ENABLED = process.env.BIRDNET_ENABLED === 'true';
+const BIRDNET_GO_URL = process.env.BIRDNET_GO_URL;
+const BIRDNET_MIN_CONFIDENCE = parseFloat(process.env.BIRDNET_MIN_CONFIDENCE || 0.7);
+const BIRDNET_LOOKBACK_HOURS = parseInt(process.env.BIRDNET_LOOKBACK_HOURS || 48);
 
 // Persistence / AI
 let storage;
 let aiProvider;
+let birdnetProvider;
 let isProcessing = false;
 
 /**
@@ -42,6 +48,15 @@ function initializeApp() {
 
   storage = new Storage();
   aiProvider = new AIProvider(storage);
+
+  if (BIRDNET_ENABLED && BIRDNET_GO_URL) {
+    birdnetProvider = new BirdNetProvider(storage, {
+      baseUrl: BIRDNET_GO_URL,
+      minConfidence: BIRDNET_MIN_CONFIDENCE,
+      lookbackHours: BIRDNET_LOOKBACK_HOURS,
+      downloadDir: process.env.DOWNLOAD_DIR,
+    });
+  }
 }
 
 /**
@@ -94,6 +109,14 @@ async function checkAndProcessClips() {
     await pruneOldData(storage, process.env.DOWNLOAD_DIR, RETENTION_DAYS);
   } catch (error) {
     console.error('Error pruning old data:', error);
+  }
+
+  if (birdnetProvider) {
+    try {
+      await birdnetProvider.syncDetections();
+    } catch (error) {
+      console.error('Error syncing BirdNET-Go detections:', error);
+    }
   }
 
   let clips = await checkForNewClips();

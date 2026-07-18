@@ -99,4 +99,47 @@ export class Storage {
     pruneClipsBefore(cutoffIso) {
         return this.provider.pruneClipsBefore(cutoffIso);
     }
+
+    /**
+     * Returns the highest BirdNET-Go detection ID already synced, or 0 if none.
+     * @returns {number}
+     */
+    getLatestAudioDetectionId() {
+        return this.provider.getLatestAudioDetectionId();
+    }
+
+    /**
+     * Persists a BirdNET-Go audio detection. No-ops if the detection was already synced.
+     * @param {Object} record - Audio identification fields (see sqlite-storage.js).
+     */
+    addAudioIdentification(record) {
+        return this.provider.addAudioIdentification(record);
+    }
+
+    /**
+     * Looks up a cached species clipart image by scientific name.
+     * @param {string} scientificName
+     * @returns {Object|null} The species_images row, or null if not cached yet.
+     */
+    getSpeciesImage(scientificName) {
+        return this.provider.getSpeciesImage(scientificName);
+    }
+
+    /**
+     * Caches a species clipart image record.
+     * @param {{ scientific_name: string, common_name?: string, local_path: string }} image
+     * @returns {number} The new species_images row ID.
+     */
+    addSpeciesImage(image) {
+        return this.provider.addSpeciesImage(image);
+    }
+
+    /**
+     * Deletes audio identifications with detected_at strictly before the cutoff.
+     * @param {string} cutoffIso - ISO 8601 timestamp.
+     * @returns {{ audioIdentificationsDeleted: number }}
+     */
+    pruneAudioIdentificationsBefore(cutoffIso) {
+        return this.provider.pruneAudioIdentificationsBefore(cutoffIso);
+    }
 }

@@ -55,6 +55,34 @@ export class SQLiteStorage {
             );
 
             CREATE INDEX IF NOT EXISTS idx_settings_name ON settings(name);
+
+            CREATE TABLE IF NOT EXISTS species_images (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scientific_name TEXT NOT NULL UNIQUE,
+                common_name TEXT,
+                local_path TEXT NOT NULL,
+                created_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS audio_identifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                birdnet_detection_id INTEGER NOT NULL UNIQUE,
+                species TEXT,
+                scientific_name TEXT,
+                species_code TEXT,
+                confidence REAL,
+                verified TEXT,
+                source TEXT,
+                detected_at TEXT,
+                begin_time TEXT,
+                end_time TEXT,
+                local_audio_path TEXT,
+                species_image_id INTEGER REFERENCES species_images(id),
+                created_at TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_audio_identifications_species ON audio_identifications(scientific_name);
+            CREATE INDEX IF NOT EXISTS idx_audio_identifications_detected_at ON audio_identifications(detected_at);
         `);
 
         this._seedDefaultSettings();
@@ -257,5 +285,58 @@ export class SQLiteStorage {
         });
 
         return transaction(cutoffIso);
+    }
+
+    getLatestAudioDetectionId() {
+        const row = this.db.prepare('SELECT MAX(birdnet_detection_id) as maxId FROM audio_identifications').get();
+        return row?.maxId || 0;
+    }
+
+    addAudioIdentification(record) {
+        const insert = this.db.prepare(`
+            INSERT OR IGNORE INTO audio_identifications
+                (birdnet_detection_id, species, scientific_name, species_code, confidence, verified, source, detected_at, begin_time, end_time, local_audio_path, species_image_id, created_at)
+            VALUES
+                (@birdnet_detection_id, @species, @scientific_name, @species_code, @confidence, @verified, @source, @detected_at, @begin_time, @end_time, @local_audio_path, @species_image_id, @created_at)
+        `);
+        return insert.run({
+            birdnet_detection_id: record.birdnet_detection_id,
+            species: record.species || null,
+            scientific_name: record.scientific_name || null,
+            species_code: record.species_code || null,
+            confidence: record.confidence ?? null,
+            verified: record.verified || null,
+            source: record.source || null,
+            detected_at: record.detected_at || null,
+            begin_time: record.begin_time || null,
+            end_time: record.end_time || null,
+            local_audio_path: record.local_audio_path || null,
+            species_image_id: record.species_image_id ?? null,
+            created_at: record.created_at || new Date().toISOString(),
+        });
+    }
+
+    getSpeciesImage(scientificName) {
+        const row = this.db.prepare('SELECT * FROM species_images WHERE scientific_name = ?').get(scientificName);
+        return row || null;
+    }
+
+    addSpeciesImage({ scientific_name, common_name, local_path }) {
+        const insert = this.db.prepare(`
+            INSERT INTO species_images (scientific_name, common_name, local_path, created_at)
+            VALUES (@scientific_name, @common_name, @local_path, @created_at)
+        `);
+        const result = insert.run({
+            scientific_name,
+            common_name: common_name || null,
+            local_path,
+            created_at: new Date().toISOString(),
+        });
+        return result.lastInsertRowid;
+    }
+
+    pruneAudioIdentificationsBefore(cutoffIso) {
+        const result = this.db.prepare('DELETE FROM audio_identifications WHERE detected_at < ?').run(cutoffIso);
+        return { audioIdentificationsDeleted: result.changes };
     }
 }
