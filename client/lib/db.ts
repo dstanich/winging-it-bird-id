@@ -186,85 +186,110 @@ export function getAudioIdentificationsForDate(date: string): AudioIdentificatio
 }
 
 export interface DateSummary {
-  clipCount: number;
-  birdCount: number;
-  nonBirdCount: number;
-  squirrelVisits: number;
-  mostCommonBirds: string[];
-  busiestHour: string | null;
-  audioDetectionCount: number;
-  uniqueSpeciesHeard: number;
+  video: {
+    clipCount: number;
+    birdCount: number;
+    nonBirdCount: number;
+    mostCommonBirds: string[];
+    busiestHour: string | null;
+    uniqueSpeciesCount: number;
+  };
+  audio: {
+    detectionCount: number;
+    uniqueSpeciesCount: number;
+    mostCommonSpecies: string[];
+    busiestHour: string | null;
+  };
+}
+
+function findBusiestHour(isoTimestamps: string[]): string | null {
+  if (isoTimestamps.length === 0) return null;
+
+  const hourCounts = new Map<number, number>();
+  for (const iso of isoTimestamps) {
+    const hour = parseInt(
+      new Date(iso).toLocaleTimeString("en-US", {
+        timeZone: "America/Chicago",
+        hour: "numeric",
+        hour12: false,
+      }),
+      10
+    );
+    hourCounts.set(hour, (hourCounts.get(hour) ?? 0) + 1);
+  }
+  const maxCount = Math.max(...hourCounts.values());
+  const peakHour = [...hourCounts.entries()].find(([, c]) => c === maxCount)![0];
+
+  const fmt = (h: number) => {
+    const suffix = h < 12 || h === 24 ? "AM" : "PM";
+    const display = h === 0 || h === 24 ? 12 : h > 12 ? h - 12 : h;
+    return `${display} ${suffix}`;
+  };
+  return `${fmt(peakHour)} – ${fmt(peakHour + 1)}`;
 }
 
 export function getDateSummary(clips: Clip[], audioIdentifications: AudioIdentification[] = []): DateSummary {
-  let birdCount = 0;
-  let nonBirdCount = 0;
-  let squirrelVisits = 0;
-  const speciesCounts = new Map<string, number>();
+  let videoBirdCount = 0;
+  let videoNonBirdCount = 0;
+  const videoSpeciesCounts = new Map<string, number>();
 
   for (const clip of clips) {
     for (const ident of clip.identifications) {
       if (ident.isBird) {
         const count = ident.count ?? 1;
-        birdCount += count;
+        videoBirdCount += count;
         if (ident.species) {
-          speciesCounts.set(ident.species, (speciesCounts.get(ident.species) ?? 0) + count);
+          videoSpeciesCounts.set(ident.species, (videoSpeciesCounts.get(ident.species) ?? 0) + count);
         }
       } else {
-        nonBirdCount++;
-        if (ident.nonBirdSpecies?.toLowerCase().includes("squirrel")) {
-          squirrelVisits++;
-        }
+        videoNonBirdCount++;
       }
     }
   }
 
-  let mostCommonBirds: string[] = [];
+  let videoMostCommonBirds: string[] = [];
 
-  if (speciesCounts.size > 0) {
-    const maxCount = Math.max(...speciesCounts.values());
-    mostCommonBirds = [...speciesCounts.entries()].filter(([, c]) => c === maxCount).map(([s]) => s);
+  if (videoSpeciesCounts.size > 0) {
+    const maxCount = Math.max(...videoSpeciesCounts.values());
+    videoMostCommonBirds = [...videoSpeciesCounts.entries()].filter(([, c]) => c === maxCount).map(([s]) => s);
   }
 
-  // Find the busiest hour by bucketing clips into Chicago-time hours
-  let busiestHour: string | null = null;
-  if (clips.length > 0) {
-    const hourCounts = new Map<number, number>();
-    for (const clip of clips) {
-      const hour = parseInt(
-        new Date(clip.createdAt).toLocaleTimeString("en-US", {
-          timeZone: "America/Chicago",
-          hour: "numeric",
-          hour12: false,
-        }),
-        10
-      );
-      hourCounts.set(hour, (hourCounts.get(hour) ?? 0) + 1);
-    }
-    const maxCount = Math.max(...hourCounts.values());
-    const peakHour = [...hourCounts.entries()].find(([, c]) => c === maxCount)![0];
+  const videoBusiestHour = findBusiestHour(clips.map((c) => c.createdAt));
 
-    const fmt = (h: number) => {
-      const suffix = h < 12 || h === 24 ? "AM" : "PM";
-      const display = h === 0 || h === 24 ? 12 : h > 12 ? h - 12 : h;
-      return `${display} ${suffix}`;
-    };
-    busiestHour = `${fmt(peakHour)} – ${fmt(peakHour + 1)}`;
-  }
-
-  const uniqueSpeciesHeard = new Set(
+  const audioUniqueSpeciesCount = new Set(
     audioIdentifications.map((a) => a.scientificName).filter((s): s is string => s != null)
   ).size;
 
+  const audioSpeciesCounts = new Map<string, number>();
+  for (const ident of audioIdentifications) {
+    if (ident.species) {
+      audioSpeciesCounts.set(ident.species, (audioSpeciesCounts.get(ident.species) ?? 0) + 1);
+    }
+  }
+
+  let audioMostCommonSpecies: string[] = [];
+  if (audioSpeciesCounts.size > 0) {
+    const maxCount = Math.max(...audioSpeciesCounts.values());
+    audioMostCommonSpecies = [...audioSpeciesCounts.entries()].filter(([, c]) => c === maxCount).map(([s]) => s);
+  }
+
+  const audioBusiestHour = findBusiestHour(audioIdentifications.map((a) => a.detectedAt));
+
   return {
-    clipCount: clips.length,
-    birdCount,
-    nonBirdCount,
-    squirrelVisits,
-    mostCommonBirds,
-    busiestHour,
-    audioDetectionCount: audioIdentifications.length,
-    uniqueSpeciesHeard,
+    video: {
+      clipCount: clips.length,
+      birdCount: videoBirdCount,
+      nonBirdCount: videoNonBirdCount,
+      mostCommonBirds: videoMostCommonBirds,
+      busiestHour: videoBusiestHour,
+      uniqueSpeciesCount: videoSpeciesCounts.size,
+    },
+    audio: {
+      detectionCount: audioIdentifications.length,
+      uniqueSpeciesCount: audioUniqueSpeciesCount,
+      mostCommonSpecies: audioMostCommonSpecies,
+      busiestHour: audioBusiestHour,
+    },
   };
 }
 

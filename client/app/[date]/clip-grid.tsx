@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 import type { Clip, AudioIdentification } from "@/lib/db";
 
-type Filter = "all" | "birds" | "non-birds";
-
 type FeedItem =
   | { type: "video"; timestamp: string; clip: Clip }
   | { type: "audio"; timestamp: string; audio: AudioIdentification };
@@ -20,7 +18,6 @@ export function ClipGrid({
   audioIdentifications: AudioIdentification[];
   audioTimes: Record<string, string>;
 }) {
-  const [filter, setFilter] = useState<Filter>("all");
   const [showVideo, setShowVideo] = useState(true);
   const [showAudio, setShowAudio] = useState(true);
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
@@ -34,15 +31,9 @@ export function ClipGrid({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [selectedImage]);
 
-  const filteredClips = clips.filter((clip) => {
-    if (filter === "all") return true;
-    if (filter === "birds") return clip.identifications.some((id) => id.isBird);
-    return clip.identifications.some((id) => !id.isBird);
-  });
-
   const items: FeedItem[] = [
     ...(showVideo
-      ? filteredClips.map((clip): FeedItem => ({ type: "video", timestamp: clip.createdAt, clip }))
+      ? clips.map((clip): FeedItem => ({ type: "video", timestamp: clip.createdAt, clip }))
       : []),
     ...(showAudio
       ? audioIdentifications.map((audio): FeedItem => ({ type: "audio", timestamp: audio.detectedAt, audio }))
@@ -78,23 +69,6 @@ export function ClipGrid({
             Audio
           </button>
         </div>
-        {showVideo && (
-          <div className="flex gap-4">
-            {(["all", "birds", "non-birds"] as const).map((value) => (
-              <label key={value} className="flex items-center gap-1.5 text-sm text-zinc-700 dark:text-zinc-300 cursor-pointer">
-                <input
-                  type="radio"
-                  name="clip-filter"
-                  value={value}
-                  checked={filter === value}
-                  onChange={() => setFilter(value)}
-                  className="accent-blue-600"
-                />
-                {value === "all" ? "All" : value === "birds" ? "Birds only" : "Non-birds only"}
-              </label>
-            ))}
-          </div>
-        )}
       </div>
       <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
         {items.length} {items.length === 1 ? "item" : "items"}
