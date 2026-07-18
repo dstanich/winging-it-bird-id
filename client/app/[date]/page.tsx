@@ -1,4 +1,11 @@
-import { getAvailableDates, getClipsForDate, getDateSummary, formatDateHeading, formatClipTime } from "@/lib/db";
+import {
+  getAvailableDates,
+  getClipsForDate,
+  getAudioIdentificationsForDate,
+  getDateSummary,
+  formatDateHeading,
+  formatClipTime,
+} from "@/lib/db";
 import { ClipGrid } from "./clip-grid";
 
 export function generateStaticParams() {
@@ -12,7 +19,8 @@ export default async function DatePage({
 }) {
   const { date } = await params;
   const clips = getClipsForDate(date);
-  const summary = getDateSummary(clips);
+  const audioIdentifications = getAudioIdentificationsForDate(date);
+  const summary = getDateSummary(clips, audioIdentifications);
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 px-4 py-8">
@@ -59,14 +67,28 @@ export default async function DatePage({
             <span className="w-36 shrink-0 text-sm font-medium text-zinc-500 dark:text-zinc-400">Squirrel visits</span>
             <span className="text-sm text-zinc-900 dark:text-zinc-100">{summary.squirrelVisits}</span>
           </div>
+          <div className="flex">
+            <span className="w-36 shrink-0 text-sm font-medium text-zinc-500 dark:text-zinc-400">Songs heard</span>
+            <span className="text-sm text-zinc-900 dark:text-zinc-100">{summary.audioDetectionCount}</span>
+          </div>
+          {summary.uniqueSpeciesHeard > 0 && (
+            <div className="flex">
+              <span className="w-36 shrink-0 text-sm font-medium text-zinc-500 dark:text-zinc-400">Species heard</span>
+              <span className="text-sm text-zinc-900 dark:text-zinc-100">{summary.uniqueSpeciesHeard}</span>
+            </div>
+          )}
         </div>
 
         <h2 className="text-xl font-semibold mb-3 text-zinc-800 dark:text-zinc-200">
-          Feeder Images
+          Feeder Activity
         </h2>
         <ClipGrid
           clips={clips}
           clipTimes={Object.fromEntries(clips.map((c) => [c.id, formatClipTime(c.createdAt)]))}
+          audioIdentifications={audioIdentifications}
+          audioTimes={Object.fromEntries(
+            audioIdentifications.map((a) => [String(a.id), formatClipTime(a.detectedAt)])
+          )}
         />
       </main>
     </div>

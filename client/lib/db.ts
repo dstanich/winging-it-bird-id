@@ -39,6 +39,26 @@ export interface DateGroup {
   clips: Clip[];
 }
 
+interface AudioIdentificationRow {
+  id: number;
+  detected_at: string;
+  species: string | null;
+  scientific_name: string | null;
+  confidence: number | null;
+  local_audio_path: string | null;
+  species_image_path: string | null;
+}
+
+export interface AudioIdentification {
+  id: number;
+  detectedAt: string;
+  species: string | null;
+  scientificName: string | null;
+  confidence: number | null;
+  audioPath: string | null;
+  speciesImagePath: string | null;
+}
+
 const RETENTION_DAYS = parseInt(process.env.RETENTION_DAYS || "60", 10);
 const cutoffIso = new Date(Date.now() - RETENTION_DAYS * 1000 * 60 * 60 * 24).toISOString();
 
@@ -98,22 +118,20 @@ function buildClips(rows: ClipRow[]): Clip[] {
 export function getAvailableDates(): string[] {
   const db = getDb();
 
-  const rows = db
-    .prepare(`SELECT DISTINCT created_at FROM clips WHERE created_at >= ? ORDER BY created_at DESC`)
-    .all(cutoffIso) as { created_at: string }[];
+  const clipRows = db
+    .prepare(`SELECT DISTINCT created_at as ts FROM clips WHERE created_at >= ?`)
+    .all(cutoffIso) as { ts: string }[];
+  const audioRows = db
+    .prepare(`SELECT DISTINCT detected_at as ts FROM audio_identifications WHERE detected_at >= ?`)
+    .all(cutoffIso) as { ts: string }[];
 
   db.close();
 
   const seen = new Set<string>();
-  const dates: string[] = [];
-  for (const row of rows) {
-    const d = toChicagoDate(row.created_at);
-    if (!seen.has(d)) {
-      seen.add(d);
-      dates.push(d);
-    }
+  for (const row of [...clipRows, ...audioRows]) {
+    seen.add(toChicagoDate(row.ts));
   }
-  return dates;
+  return [...seen].sort((a, b) => (a < b ? 1 : -1));
 }
 
 export function getClipsForDate(date: string): Clip[] {
@@ -138,6 +156,35 @@ export function getClipsForDate(date: string): Clip[] {
   return buildClips(filtered);
 }
 
+export function getAudioIdentificationsForDate(date: string): AudioIdentification[] {
+  const db = getDb();
+
+  const rows = db
+    .prepare(
+      `SELECT a.id, a.detected_at, a.species, a.scientific_name, a.confidence, a.local_audio_path,
+              s.local_path as species_image_path
+       FROM audio_identifications a
+       LEFT JOIN species_images s ON a.species_image_id = s.id
+       WHERE a.detected_at >= ?
+       ORDER BY a.detected_at DESC`
+    )
+    .all(cutoffIso) as AudioIdentificationRow[];
+
+  db.close();
+
+  return rows
+    .filter((r) => toChicagoDate(r.detected_at) === date)
+    .map((r) => ({
+      id: r.id,
+      detectedAt: r.detected_at,
+      species: r.species,
+      scientificName: r.scientific_name,
+      confidence: r.confidence,
+      audioPath: r.local_audio_path,
+      speciesImagePath: r.species_image_path,
+    }));
+}
+
 export interface DateSummary {
   clipCount: number;
   birdCount: number;
@@ -145,9 +192,11 @@ export interface DateSummary {
   squirrelVisits: number;
   mostCommonBirds: string[];
   busiestHour: string | null;
+  audioDetectionCount: number;
+  uniqueSpeciesHeard: number;
 }
 
-export function getDateSummary(clips: Clip[]): DateSummary {
+export function getDateSummary(clips: Clip[], audioIdentifications: AudioIdentification[] = []): DateSummary {
   let birdCount = 0;
   let nonBirdCount = 0;
   let squirrelVisits = 0;
@@ -203,7 +252,20 @@ export function getDateSummary(clips: Clip[]): DateSummary {
     busiestHour = `${fmt(peakHour)} – ${fmt(peakHour + 1)}`;
   }
 
-  return { clipCount: clips.length, birdCount, nonBirdCount, squirrelVisits, mostCommonBirds, busiestHour };
+  const uniqueSpeciesHeard = new Set(
+    audioIdentifications.map((a) => a.scientificName).filter((s): s is string => s != null)
+  ).size;
+
+  return {
+    clipCount: clips.length,
+    birdCount,
+    nonBirdCount,
+    squirrelVisits,
+    mostCommonBirds,
+    busiestHour,
+    audioDetectionCount: audioIdentifications.length,
+    uniqueSpeciesHeard,
+  };
 }
 
 export function formatClipTime(isoString: string): string {
