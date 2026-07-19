@@ -38,7 +38,7 @@ export function ClipGrid({
     ...(showAudio
       ? audioIdentifications.map((audio): FeedItem => ({ type: "audio", timestamp: audio.detectedAt, audio }))
       : []),
-  ].sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
+  ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   return (
     <>
