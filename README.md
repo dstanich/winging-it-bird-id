@@ -34,6 +34,10 @@ The server is a Node.js application that runs a local FTP server for the camera 
 
 Alternatively, run via Docker: the `Dockerfile` exposes the FTP control port (`2121`) and passive port range (`30100-30110`), with volumes for `data/` and `downloads/`.
 
+#### Tests
+
+`cd server && npm test` runs the [Vitest](https://vitest.dev) suite in `server/test/` (`npm run test:watch` for watch mode). Tests use temp directories and stubbed network/AI calls, so they need no `.env`, never touch `server/data/`, and never call Gemini or BirdNET-Go. Thumbnail tests run the real bundled ffmpeg binary.
+
 
 ### Client
 
@@ -73,7 +77,7 @@ As with local dev, `server/data/bird-data.db` must exist and contain data before
 ## TODOs
 
 - [ ] TypeScript
-- [ ] Tests
+- [ ] Client tests (the server has a Vitest suite)
 - [ ] Linting
 - [ ] Graphing and other nice visualizations
 

@@ -103,8 +103,26 @@ function extractThumbnail(videoPath, thumbnailPath) {
 }
 
 /**
+ * Delete an uploaded video that won't be processed, logging (not throwing) on failure.
+ * @param {string} filePath
+ */
+function removeUpload(filePath) {
+  try {
+    fs.rmSync(filePath, { force: true });
+  } catch (error) {
+    console.error(`Error removing duplicate upload ${filePath}:`, error);
+  }
+}
+
+/**
  * Scan uploadDir for new video files, parse metadata, extract thumbnails,
  * and return clip objects for anything not already in storage.
+ *
+ * Duplicate uploads are deleted rather than left to be rescanned every tick:
+ * one whose clip ID is already in storage (e.g. a camera re-upload), or a
+ * second upload in the same scan that resolves to the same clip ID (e.g. two
+ * channels recording in the same second) - the first one that yields a
+ * clip wins.
  *
  * @param {Object} storage
  * @param {string} uploadDir
@@ -117,6 +135,7 @@ export async function discoverNewClips(storage, uploadDir, downloadDir, defaultC
   console.log(`✓ Found ${files.length} uploaded video file(s)`);
 
   const processedIds = storage.data();
+  const seenIds = new Set();
   const clips = [];
 
   for (const { filePath, fileName } of files) {
@@ -125,7 +144,13 @@ export async function discoverNewClips(storage, uploadDir, downloadDir, defaultC
       const id = Math.floor(timestamp.getTime() / 1000);
 
       if (processedIds[id]) {
-        console.log(`✓ Skipping already processed clip: ${id} (${fileName})`);
+        console.log(`✓ Skipping already processed clip: ${id} (${fileName}); removing upload`);
+        removeUpload(filePath);
+        continue;
+      }
+      if (seenIds.has(id)) {
+        console.log(`✓ Skipping duplicate upload for clip ${id} in this batch (${fileName}); removing upload`);
+        removeUpload(filePath);
         continue;
       }
 
@@ -155,6 +180,7 @@ export async function discoverNewClips(storage, uploadDir, downloadDir, defaultC
         localThumbnailPath: thumbnailPath,
         localVideoPath: filePath,
       });
+      seenIds.add(id);
     } catch (error) {
       console.error(`Error processing uploaded file ${fileName}:`, error);
     }
