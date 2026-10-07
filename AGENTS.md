@@ -1,104 +1,149 @@
 # AGENTS.md
 
-This file provides guidance to AI agents such as Claude Code and GitHub Copilot when working with code in this repository.
+This file provides guidance to AI agents such as Claude Code and GitHub Copilot when working with code in this repository. `CLAUDE.md` just imports this file — edit this one.
 
 ## Project Overview
 
-Hobby project that runs a local FTP server for a Reolink camera (pointed at a bird feeder) to push recorded clips to, identifies bird species in each clip using Google Gemini AI, and logs results. It also optionally syncs audio-based species detections from a self-hosted BirdNET-Go instance, independent of the video clips. Monorepo with a Node.js backend (`server/`) and a Next.js frontend (`client/`).
+Hobby project that runs a local FTP server for a Reolink camera (pointed at a bird feeder) to push recorded clips to, identifies bird species in each clip using Google Gemini AI, and logs results. It also optionally syncs audio-based species detections from a self-hosted BirdNET-Go instance, independent of the video clips. A Next.js frontend is statically exported and published to S3/CloudFront (live at https://winging-it.org). Monorepo with a Node.js backend (`server/`) and a Next.js frontend (`client/`).
 
 ## Repository Structure
 
 ```
 ├── server/                        # Node.js orchestration + local FTP ingestion
-│   ├── index.js                   # Main entry point: starts FTP listener + periodic processing loop
+│   ├── index.js                   # Main entry point: starts FTP listener + periodic processing loop (incl. cooldown filter)
 │   ├── lib/
-│   │   ├── ai-provider.js         # Gemini AI integration
+│   │   ├── ai-provider.js         # Gemini AI integration; exports DEFAULT_PROMPT / DEFAULT_MODEL
 │   │   ├── birdnet-provider.js    # BirdNET-Go audio detection sync (optional, independent of clips)
 │   │   ├── ftp-listener.js        # FTP server (ftp-srv) the camera pushes clips to
 │   │   ├── ftp-clips.js           # Scans uploads, parses filenames, extracts thumbnails (ffmpeg)
-│   │   ├── retention.js           # Prunes clips/identifications/audio identifications/downloads older than RETENTION_DAYS
-│   │   ├── storage.js             # Storage facade
-│   │   └── sqlite-storage.js      # SQLite implementation
-│   ├── data/bird-data.db          # SQLite database
+│   │   ├── retention.js           # Prunes clips/identifications/audio identifications/download dirs older than RETENTION_DAYS
+│   │   ├── storage.js             # Storage facade (JSDoc'd interface)
+│   │   └── sqlite-storage.js      # SQLite implementation: schema, seeding, migrations, queries
+│   ├── data/bird-data.db          # SQLite database (git-ignored)
 │   ├── uploads/                   # Raw video files pushed by the camera via FTP (deleted after processing)
 │   ├── downloads/                 # Thumbnails: YYYY/M/D/{clip-id}.jpg; audio clips: YYYY/M/D/audio-{detection-id}.wav; species clipart cache: species/{scientific-name-slug}.jpg
+│   ├── .env.example
 │   └── Dockerfile
 ├── client/                        # Next.js static frontend
 │   ├── app/
-│   │   ├── layout.tsx             # Root layout (optional Cloudflare Analytics)
-│   │   ├── page.tsx               # Home: lists available dates
-│   │   ├── settings/page.tsx      # Shows current AI model/prompt config
+│   │   ├── layout.tsx             # Root layout (Geist fonts, favicons, optional Cloudflare Analytics)
+│   │   ├── page.tsx               # Home: intro, 8 most recent dates, link to /all-dates
+│   │   ├── all-dates/page.tsx     # Full list of available dates
+│   │   ├── settings/page.tsx      # Shows current active AI model/prompt
 │   │   └── [date]/
 │   │       ├── page.tsx           # Date detail: summary (video + audio stats) + combined feed
-│   │       └── clip-grid.tsx      # Client component: merged video/audio feed, video/audio + birds/non-birds filters, image lightbox
-│   ├── lib/db.ts                  # SQLite queries (build-time only)
-│   ├── data/bird-data.db          # Symlink → server/data/bird-data.db
-│   ├── scripts/scheduled-publish/ # S3 deploy script (build + upload + CloudFront invalidation)
+│   │       └── clip-grid.tsx      # Client component: merged video/audio feed, video/audio toggles, image lightbox
+│   ├── lib/
+│   │   ├── db.ts                  # SQLite queries (build-time only)
+│   │   └── links.ts               # pageHref(): internal link helper for S3-compatible URLs
+│   ├── public/
+│   │   ├── images/                # Logo, favicons, GitHub mark, feeder photo
+│   │   └── downloads/             # Server's downloads/ dir must be available here (git-ignored; volume mount in Docker)
+│   ├── data/bird-data.db          # Committed symlink → ../../server/data/bird-data.db
+│   ├── scripts/scheduled-publish/ # S3 deploy script (own package.json): build + upload + CloudFront invalidation, every 5h
+│   ├── .env.example
 │   └── Dockerfile                 # Container for scheduled S3 publishing
+├── .claude/
+│   ├── settings.json              # Shared Claude Code permissions (lint/build/read-only git+sqlite allowed; .env reads denied)
+│   └── launch.json                # Claude Code preview config: client dev server on :3000
+├── README.md                      # Human-facing setup docs (keep in sync with this file)
+├── CLAUDE.md                      # Just `@./AGENTS.md`
 └── AGENTS.md
 ```
 
-There is no root-level `package.json` — each directory manages its own dependencies.
+## Keeping These Docs Current (required)
+
+Any change that alters what this file describes **must update `AGENTS.md` in the same change** — don't wait to be asked. That includes: adding/removing/renaming files or routes, new env vars or defaults, schema changes, changes to the processing loop or sync behavior, new commands/scripts, Docker changes, and new conventions. Also update `README.md` (human setup docs) and the relevant `.env.example` when setup or configuration changes. `CLAUDE.md` only imports this file, so it never needs separate edits. Before finishing a task, re-read the affected sections here and confirm they still match the code.
+
+There is no root-level `package.json` — `server/`, `client/`, and `client/scripts/scheduled-publish/` each manage their own dependencies.
 
 ## Commands
 
 ### Server (`cd server`)
 
 ```bash
-npm start                  # Run main app (node index.js): starts the FTP listener and processing loop
+npm start                  # node index.js: starts the FTP listener, runs an initial check, then loops every CHECK_INTERVAL
 ```
 
 ### Client (`cd client`)
 
 ```bash
-npm run dev                # Next.js dev server
+npm run dev                # Next.js dev server on http://localhost:3000 (no .env needed)
 npm run build              # Static export build (outputs to client/out/)
-npm run lint               # ESLint
+npm run lint               # ESLint (eslint-config-next core-web-vitals + typescript)
 ```
+
+### Scheduled publish (`cd client/scripts/scheduled-publish`)
+
+```bash
+npm start                  # Build + publish immediately, then repeat every 5 hours (needs S3/AWS env vars)
+```
+
+There are **no tests** in any package (`npm test` is a placeholder), and the server has no linter. Verify server changes by reading carefully / running `npm start` against a scratch `DATA_DIR`; verify client changes with `npm run lint` and `npm run build`.
 
 ## Architecture
 
 ### Server
 
-- **Node.js orchestration layer** (`server/index.js`) — starts the FTP listener, then runs a periodic loop (`CHECK_INTERVAL`, default 10 minutes) that scans for newly uploaded clips, applies a cooldown filter (`VIDEO_COOLDOWN_SECONDS`, default 0/disabled) that discards clips whose timestamp falls within that window of the last *processed* clip's timestamp — deleting their video + thumbnail immediately without ever calling the AI, to avoid burning API calls on motion-triggered bursts of near-duplicate clips — then sends the remaining thumbnails to Gemini for bird identification (with `PROCESS_DELAY` between API calls), stores results, and deletes successfully processed videos (failed ones are retried next tick, guarded by an `isProcessing` flag against overlapping runs)
-- **FTP listener** (`server/lib/ftp-listener.js`) — starts an always-on FTP server (`ftp-srv` npm package) on `FTP_HOST:FTP_PORT` that the camera authenticates against (`FTP_USERNAME`/`FTP_PASSWORD`) and pushes recordings to on motion; writes uploads under `UPLOAD_DIR`. Pure plumbing — no clip/AI logic.
-- **Clip discovery** (`server/lib/ftp-clips.js`) — scans `UPLOAD_DIR` for video files, parses Reolink's FTP filename convention `[Camera]_[Channel]_[YYYYMMDDHHMMSS].ext` (falls back to file mtime + `CAMERA_NAME` if unmatched), extracts a JPEG thumbnail via `ffmpeg-static`/`fluent-ffmpeg`, and returns clip objects for anything not already in storage.
-- **Retention** (`server/lib/retention.js`) — on each loop tick, prunes clips/identifications and audio identifications older than `RETENTION_DAYS` from SQLite and removes their corresponding date directories under `downloads/`. Species clipart in `downloads/species/` is never pruned — it's a small, persistent per-species cache, not time-bound per-detection data.
-- **AI provider** (`server/lib/ai-provider.js`) — sends base64-encoded JPEG to Google Gemini (default model: `gemini-2.5-flash`), returns structured JSON with species info. Model and prompt are configurable via the `settings` database table.
-- **BirdNET-Go provider** (`server/lib/birdnet-provider.js`) — optional (`BIRDNET_ENABLED`/`BIRDNET_GO_URL`). On each loop tick, polls a self-hosted BirdNET-Go instance's REST API (`GET /api/v2/detections`, newest-first, paginated) for detections newer than the last synced ID and within `BIRDNET_LOOKBACK_HOURS`. Detections at or above `BIRDNET_MIN_CONFIDENCE` are persisted: the per-detection audio clip is downloaded (`GET /api/v2/audio/{id}`) into the same dated `downloads/YYYY/M/D/` tree as thumbnails, and a per-species clipart image is downloaded once (`GET /api/v2/media/species-image?name={scientificName}`) and reused for every future detection of that species. Audio identifications are **not** correlated to video clips — they're an independent record stream keyed by BirdNET-Go's own detection ID.
-- **Storage** (`server/lib/storage.js`) — facade over a swappable storage provider; delegates to `server/lib/sqlite-storage.js` which persists clips, bird identifications, audio identifications, species clipart, and settings to a SQLite database (`server/data/bird-data.db`) via `better-sqlite3`. Uses WAL mode. Also exposes `getMostRecentClipTimestamp()`, used to seed the cooldown check above across loop ticks.
+- **Main loop** (`server/index.js`) — `initializeApp()` creates `DOWNLOAD_DIR`/`UPLOAD_DIR`, the `Storage`, `AIProvider`, and (if enabled) `BirdNetProvider`. Then it starts the FTP listener, runs one check immediately, and schedules `triggerCheck()` every `CHECK_INTERVAL` ms (code default 10 min; `.env.example` uses 2 h). `triggerCheck()` is guarded by an `isProcessing` flag so a slow run (due to `PROCESS_DELAY` throttling) never overlaps the next. Each tick, in order:
+  1. `pruneOldData()` — retention (below)
+  2. `birdnetProvider.syncDetections()` — if enabled
+  3. `discoverNewClips()` — scan uploads, extract thumbnails
+  4. `applyCooldown()` — if `VIDEO_COOLDOWN_SECONDS` > 0, sorts clips chronologically and discards any whose timestamp falls within that window of the last *processed* clip (seeded from `storage.getMostRecentClipTimestamp()`), deleting their video + thumbnail immediately without calling the AI. Avoids burning API calls on motion-triggered bursts of near-duplicate clips.
+  5. `processClips()` — sends each thumbnail to Gemini, waiting `PROCESS_DELAY` ms (default 30s) after each call
+  6. Stores successful clips, then deletes their uploaded videos. Failed clips keep their video and are retried next tick.
+  Each step's errors are caught and logged so one failure doesn't kill the loop.
+- **FTP listener** (`server/lib/ftp-listener.js`) — always-on `ftp-srv` server on `FTP_HOST:FTP_PORT` with the upload dir as FTP root. Anonymous login is disabled; if `FTP_USERNAME` is set, credentials must match, otherwise any login is accepted. Pure plumbing — no clip/AI logic.
+- **Clip discovery** (`server/lib/ftp-clips.js`) — walks `UPLOAD_DIR` (plus one level of subdirectories) for `mp4/264/265/h264/h265` files, parses Reolink's FTP filename convention `[Camera]_[Channel]_[YYYYMMDDHHMMSS].ext` (timestamp interpreted in the **server's local time zone**; falls back to file mtime + `CAMERA_NAME` if unmatched). **Clip ID = recording time in Unix seconds**, which is also the dedupe key against `storage.data()`. Extracts a JPEG frame at the 1-second mark via `ffmpeg-static`/`fluent-ffmpeg` (fixed offset, because `ffmpeg-static` doesn't bundle `ffprobe`), skipping extraction if the thumbnail already exists.
+- **AI provider** (`server/lib/ai-provider.js`) — sends the base64 JPEG plus the active prompt to Gemini via `@google/genai` (default model `gemini-2.5-flash`), parses the JSON response (normalizing a single object to an array), and tags each result with the `ai_model_id`/`ai_prompt_id` settings row IDs used. A clip can produce multiple identification rows (one per species).
+- **BirdNET-Go provider** (`server/lib/birdnet-provider.js`) — optional (`BIRDNET_ENABLED=true` *and* `BIRDNET_GO_URL`). Pages through `GET /api/v2/detections` (newest-first, 100 per page), stopping at the last synced `birdnet_detection_id` or the `BIRDNET_LOOKBACK_HOURS` cutoff. Detections at or above `BIRDNET_MIN_CONFIDENCE` are persisted: the audio clip is downloaded (`GET /api/v2/audio/{id}`) into the dated `downloads/YYYY/M/D/` tree, and a per-species clipart image is downloaded once (`GET /api/v2/media/species-image?name={scientificName}`) and reused for every future detection of that species. Audio identifications are **not** correlated to video clips — they're an independent record stream keyed by BirdNET-Go's own detection ID.
+- **Retention** (`server/lib/retention.js`) — deletes clips + identifications (by `created_at`) and audio identifications (by `detected_at`) older than `RETENTION_DAYS`, then removes `downloads/YYYY/M/D/` directories older than the cutoff day (and empty month/year dirs). `downloads/species/` is never pruned — it's a small persistent per-species cache.
+- **Storage** (`server/lib/storage.js` → `server/lib/sqlite-storage.js`) — facade over a swappable provider. The SQLite provider uses `better-sqlite3` with WAL mode and foreign keys on, creates the schema with `CREATE TABLE IF NOT EXISTS`, seeds default `ai_prompt`/`ai_model` settings on first run, and runs an in-place migration for the legacy `identifications.model` column. `commit()` is a no-op (writes are immediate). New storage methods must be added to both the facade and the SQLite provider.
 
 ### Client
 
-- **Next.js 16 + React 19** with App Router, TypeScript, and Tailwind CSS v4
-- **Static export** — configured in `next.config.ts` (`output: "export"`, `trailingSlash: true`) for S3 hosting
-- **Routes:** `/` lists available dates; `/[date]/` shows a combined video + audio feed and summary for a given date; `/settings/` shows current AI model and prompt
-- **Combined feed** (`client/app/[date]/clip-grid.tsx`) — merges video clips and BirdNET-Go audio identifications into a single chronological feed, sorted by timestamp. Independent toggles show/hide video and audio items; a birds/non-birds radio filter (video only) narrows further. Audio items show the cached species clipart (or a fallback emoji), an inline `<audio>` player, and species/confidence. Clicking a video thumbnail or species image opens it in a lightbox modal (closable via click-outside or Escape).
-- **Data access** (`client/lib/db.ts`) — reads the SQLite database directly via `better-sqlite3` at build time (readonly). Exposes `getAudioIdentificationsForDate` (joins `audio_identifications` with `species_images`) alongside `getClipsForDate`; `getAvailableDates` unions dates from both `clips` and `audio_identifications`. `getDateSummary` folds in audio detection count and unique species heard. All dates use `America/Chicago` timezone, formatted with `en-CA` locale for YYYY-MM-DD URL paths.
-- **Symlinked database** — `client/data/bird-data.db` symlinks to `server/data/bird-data.db`
-- **Scheduled publishing** (`client/scripts/scheduled-publish/`) — builds static site, uploads changed files to S3 (skips unchanged via ETag/MD5), optionally invalidates CloudFront
+- **Next.js 16 + React 19** with App Router, TypeScript, and Tailwind CSS v4.
+- **Static export** — `next.config.ts` sets `output: "export"`, `trailingSlash: true`, and `outputFileTracingRoot` to the repo root so the DB symlink resolves. All pages are server components rendered at build time; `[date]` uses `generateStaticParams()` from `getAvailableDates()`.
+- **Routes:** `/` (intro + 8 most recent dates), `/all-dates/`, `/[date]/` (summary + combined feed), `/settings/` (active AI model/prompt).
+- **Internal links** — use `pageHref()` from `client/lib/links.ts` for links between pages: it emits `/path/index.html` in production (S3 has no directory-index rewriting) and `/path/` in dev.
+- **Combined feed** (`client/app/[date]/clip-grid.tsx`, the only client component) — merges video clips and BirdNET-Go audio identifications into one feed, newest first. Two independent toggle buttons show/hide video and audio items. Video cards show the thumbnail, each identification (species/gender/count/confidence, or the non-bird label in red), and the AI model. Audio cards show the cached species clipart (or a 🐦 fallback), species/confidence, and an inline `<audio>` player. Clicking a thumbnail or species image opens a lightbox modal (closable via click-outside, ×, or Escape). Formatted times are computed server-side and passed in as `clipTimes`/`audioTimes` maps to avoid hydration timezone mismatches.
+- **Media paths** — the DB stores paths like `downloads/2026/7/4/1751652000.jpg` (relative to the server's working dir), and the client renders them as `/${path}`. So the server's `downloads/` directory must be exposed at `client/public/downloads/` (Docker volume mount in production); the publish script also copies `public/downloads` into `out/` explicitly.
+- **Data access** (`client/lib/db.ts`) — opens the SQLite DB read-only via `better-sqlite3` at build time, a fresh connection per query. Only rows newer than `RETENTION_DAYS` (default 60) are included. `getAvailableDates` unions dates from `clips` and `audio_identifications`; `getClipsForDate` joins identifications and the model setting; `getAudioIdentificationsForDate` joins `species_images`; `getDateSummary` computes video (clips, birds, non-birds, most common, busiest hour, unique species) and audio (detections, species heard, most common, busiest hour) stats; `getActiveSettings` backs the settings page. **All date bucketing and time display use the `America/Chicago` timezone**; dates are formatted with the `en-CA` locale to get `YYYY-MM-DD` URL paths. Filtering by date happens in JS after the query, not in SQL.
+- **Scheduled publishing** (`client/scripts/scheduled-publish/index.js`) — loop (immediately, then every 5 hours): `npm run build`, copy `public/downloads` into `out/`, upload changed files to S3 (skips unchanged via ETag/MD5 compare), delete S3 objects no longer in the build (skipped if fewer than 10 local files, guarding against a broken build wiping the bucket), then invalidate CloudFront `/*` if anything changed.
 
 ### Database Schema
 
-**clips** — `id` (PK), `created_at`, `updated_at`, `device_name`, `network_name`, `type`, `source`, `thumbnail`, `media`, `time_zone`, `local_thumbnail_path`
+**clips** — `id` (PK, Unix seconds of recording time), `created_at`, `updated_at`, `device_name`, `network_name` (`'Reolink FTP'`), `type` (`'recording'`), `source` (`'ftp'`), `thumbnail`, `media` (original filename), `time_zone`, `local_thumbnail_path`. Index on `created_at`.
 
-**identifications** — `id` (autoincrement PK), `clip_id` (FK → clips), `is_bird`, `species`, `gender`, `count`, `confidence`, `non_bird_species`, `ai_model_id` (FK → settings), `ai_prompt_id` (FK → settings)
+**identifications** — `id` (autoincrement PK), `clip_id` (FK → clips), `is_bird`, `species` (lowercase common name), `gender`, `count`, `confidence`, `non_bird_species`, `ai_model_id` (FK → settings), `ai_prompt_id` (FK → settings). Index on `species`.
 
-**audio_identifications** — `id` (autoincrement PK), `birdnet_detection_id` (unique, BirdNET-Go's own detection ID — dedupe/sync cursor key), `species`, `scientific_name`, `species_code`, `confidence`, `verified`, `source`, `detected_at`, `begin_time`, `end_time`, `local_audio_path`, `species_image_id` (FK → species_images). Not linked to `clips` — independent of video identifications.
+**audio_identifications** — `id` (autoincrement PK), `birdnet_detection_id` (unique, BirdNET-Go's own detection ID — dedupe/sync cursor key), `species`, `scientific_name`, `species_code`, `confidence`, `verified`, `source`, `detected_at`, `begin_time`, `end_time`, `local_audio_path`, `species_image_id` (FK → species_images), `created_at`. Indexes on `scientific_name`, `detected_at`. Not linked to `clips`.
 
 **species_images** — `id` (autoincrement PK), `scientific_name` (unique — reuse key), `common_name`, `local_path`, `created_at`. One clipart image per species, fetched from BirdNET-Go once and referenced by every matching `audio_identifications` row.
 
-**settings** — `id` (autoincrement PK), `name`, `value`, `is_active` (boolean). Used for `ai_model` and `ai_prompt` configuration.
+**settings** — `id` (autoincrement PK), `name`, `value`, `is_active` (boolean). Used for `ai_model` and `ai_prompt`. Settings are versioned: identifications reference the exact row used, so to change the model/prompt insert a new row and flip `is_active` rather than editing an existing row's `value`.
+
+Schema changes go in `SQLiteStorage._createSchema()`; existing databases need an explicit migration (see `_migrateIdentifications()` for the pattern), since `CREATE TABLE IF NOT EXISTS` won't add columns. Update the client's row interfaces in `client/lib/db.ts` to match.
+
+## Configuration
+
+Environment config via `.env` in each directory (see each `.env.example`):
+
+- **Server** — `GOOGLE_API_KEY`, `PROCESS_DELAY`; `CAMERA_NAME`, `CHECK_INTERVAL`, `DATA_DIR`, `DOWNLOAD_DIR`, `RETENTION_DAYS`, `VIDEO_COOLDOWN_SECONDS`; `UPLOAD_DIR`, `FTP_HOST`, `FTP_PORT`, `FTP_USERNAME`, `FTP_PASSWORD`, `FTP_PASV_URL`, `FTP_PASV_MIN`, `FTP_PASV_MAX`; `BIRDNET_ENABLED`, `BIRDNET_GO_URL`, `BIRDNET_MIN_CONFIDENCE`, `BIRDNET_LOOKBACK_HOURS`. `FTP_PASV_URL` must be the LAN IP of the host running the server (required for passive-mode transfers).
+- **Client / publish** — `SCHEDULED_PUBLISH_CLIENT_DIR`, `SCHEDULED_PUBLISH_S3_BUCKET`, `SCHEDULED_PUBLISH_S3_PREFIX`, `SCHEDULED_PUBLISH_CLOUDFRONT_DISTRIBUTION_ID`, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_REGION`, `RETENTION_DAYS`, `CLOUDFLARE_ANALYTICS_TOKEN`.
+
+When adding an env var, update the relevant `.env.example`, the README, and this file.
 
 ## Key Conventions
 
-- ES modules throughout (`"type": "module"` in server package.json)
-- Uses `fileURLToPath` pattern for `__dirname` equivalent in server code
-- Camera pushes clips via FTP; no local network polling or cloud auth — configured entirely via `FTP_HOST`/`FTP_PORT`/`FTP_USERNAME`/`FTP_PASSWORD`/`FTP_PASV_URL`/`FTP_PASV_MIN`/`FTP_PASV_MAX` env vars. `FTP_PASV_URL` must be the LAN IP of the host running the server (required for passive-mode transfers).
-- Uploaded videos land in `UPLOAD_DIR` and are deleted once successfully processed into a thumbnail + DB row; downloads organized by date: `server/downloads/YYYY/M/D/{clip-id}.jpg`
-- BirdNET-Go audio sync is optional and entirely separate from FTP/video processing — enabled via `BIRDNET_ENABLED`/`BIRDNET_GO_URL`, tuned via `BIRDNET_MIN_CONFIDENCE`/`BIRDNET_LOOKBACK_HOURS`; requires no local FTP/RTSP config since it just queries BirdNET-Go's own REST API
-- Environment config via `.env` in each directory (see `.env.example` for variables)
-- Server Dockerfile: `node:20-slim` base, volumes for `data/`, `downloads/`; exposes FTP control port `2121` and passive port range `30100-30110`
-- Client Dockerfile: runs scheduled-publish script for automated S3 deployments
-- Dark mode supported in frontend (Tailwind `dark:` prefixes)
-- Path alias `@/*` → `./` in client TypeScript config
+- Server is plain JavaScript ES modules (`"type": "module"`), JSDoc for documentation, 2-space indent in `index.js`/`lib/ftp-*.js`/`birdnet-provider.js` and 4-space in `storage.js`/`sqlite-storage.js`/`ai-provider.js`/`retention.js` — match the file you're editing.
+- Uses the `fileURLToPath` pattern for a `__dirname` equivalent in ES module code.
+- Server logs to stdout with `console.log`/`console.error`; `✓` prefixes successful steps.
+- Camera pushes clips via FTP; no camera polling or cloud auth.
+- Uploaded videos are deleted once successfully processed into a thumbnail + DB row; downloads organized by date: `server/downloads/YYYY/M/D/` (month/day not zero-padded).
+- BirdNET-Go audio sync is optional and entirely separate from FTP/video processing.
+- Client: Tailwind utility classes with `dark:` variants for every color (dark mode is supported everywhere); zinc palette, blue-600/blue-400 links. Path alias `@/*` → `client/`. Plain `<img>`/`<a>` tags are used deliberately (static export, no image optimization).
+- Server Dockerfile: `node:20-slim` + build tools for `better-sqlite3`; volumes for `data/` and `downloads/` (note: `uploads/` is not a volume); exposes FTP control port `2121` and passive port range `30100-30110`.
+- Client Dockerfile: `node:20`; installs client + scheduled-publish deps, runs the publish script; volumes `/app/data` (DB) and `/app/public/downloads` (media).
+- Commit messages follow Conventional Commits with a scope, e.g. `fix(server): ...`, `feat(client): ...`, `docs: ...`, `chore: ...`.
+- When behavior changes, keep `README.md` and this file in sync (see "Keeping These Docs Current" above).
