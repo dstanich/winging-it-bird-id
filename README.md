@@ -45,9 +45,10 @@ The client is a Next.js application that is statically exported into files then 
 
 #### Setup
 
-1. Make sure `server/data/bird-data.db` exists — run the server (`cd server && npm start`) at least once so it creates the SQLite schema. The client reads this database read-only via a committed symlink at `client/data/bird-data.db`.
-2. `cd client && npm install`
-3. `npm run dev` → http://localhost:3000 (no `.env` file needed for local dev)
+1. Make sure `server/data/bird-data.db` exists — run the server (`cd server && npm start`) at least once so it creates the SQLite schema. The client reads this database read-only via `client/data`, a committed symlink to `server/data`.
+2. To see thumbnails, audio, and species images locally, link the server's media directory into the client (git-ignored, so it isn't committed): `ln -s ../../server/downloads client/public/downloads` (run from the repo root).
+3. `cd client && npm install`
+4. `npm run dev` → http://localhost:3000 (no `.env` file needed for local dev)
 
 #### Tests
 

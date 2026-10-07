@@ -43,14 +43,15 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   ├── vitest.config.mts
 │   ├── public/
 │   │   ├── images/                # Logo, favicons, GitHub mark, feeder photo
-│   │   └── downloads/             # Server's downloads/ dir must be available here (git-ignored; volume mount in Docker)
-│   ├── data/bird-data.db          # Committed symlink → ../../server/data/bird-data.db
+│   │   └── downloads/             # Server's downloads/ dir must be available here (git-ignored; locally a symlink → ../../server/downloads you create yourself; volume mount in Docker)
+│   ├── data/                      # Committed symlink → ../server/data (so client/data/bird-data.db is the server's DB)
 │   ├── scripts/scheduled-publish/ # S3 deploy script (own package.json): build + upload + CloudFront invalidation, every 5h
 │   ├── .env.example
 │   └── Dockerfile                 # Container for scheduled S3 publishing
 ├── .claude/
-│   ├── settings.json              # Shared Claude Code permissions (lint/build/read-only git+sqlite allowed; .env reads denied)
+│   ├── settings.json              # Shared Claude Code permissions (npm lint/build/install/ci + read-only git/sqlite allowed; .env reads denied)
 │   └── launch.json                # Claude Code preview config: client dev server on :3000
+├── .nvmrc                         # lts/krypton (Node 24) for local dev; Docker images use node:20
 ├── README.md                      # Human-facing setup docs (keep in sync with this file)
 ├── CLAUDE.md                      # Just `@./AGENTS.md`
 └── AGENTS.md
@@ -119,7 +120,7 @@ The server and client each have a Vitest suite (`server/test/`, `client/test/`);
   Each step's errors are caught and logged so one failure doesn't kill the loop.
 - **FTP listener** (`server/lib/ftp-listener.js`) — always-on `ftp-srv` server on `FTP_HOST:FTP_PORT` with the upload dir as FTP root. Anonymous login is disabled; if `FTP_USERNAME` is set, credentials must match, otherwise any login is accepted. Pure plumbing — no clip/AI logic.
 - **Clip discovery** (`server/lib/ftp-clips.js`) — walks `UPLOAD_DIR` (plus one level of subdirectories) for `mp4/264/265/h264/h265` files, parses Reolink's FTP filename convention `[Camera]_[Channel]_[YYYYMMDDHHMMSS].ext` (timestamp interpreted in the **server's local time zone**; falls back to file mtime + `CAMERA_NAME` if unmatched). **Clip ID = recording time in Unix seconds**, which is also the dedupe key: uploads whose ID is already in `storage.data()`, or that repeat an ID already yielding a clip in the same scan (e.g. two channels in the same second), are skipped and their video deleted. Extracts a JPEG frame at the 1-second mark via `ffmpeg-static`/`fluent-ffmpeg` (fixed offset, because `ffmpeg-static` doesn't bundle `ffprobe`), skipping extraction if the thumbnail already exists.
-- **AI provider** (`server/lib/ai-provider.js`) — sends the base64 JPEG plus the active prompt to Gemini via `@google/genai` (default model `gemini-2.5-flash`), parses the JSON response (normalizing a single object to an array), and tags each result with the `ai_model_id`/`ai_prompt_id` settings row IDs used. A clip can produce multiple identification rows (one per species).
+- **AI provider** (`server/lib/ai-provider.js`) — sends the base64 JPEG plus the active prompt to Gemini via `@google/genai` (default model `gemini-2.5-flash`), parses the JSON response, and tags each result (a single object is tagged too, but returned as-is; `addClip()` wraps it in an array) with the `ai_model_id`/`ai_prompt_id` settings row IDs used. A clip can produce multiple identification rows (one per species).
 - **BirdNET-Go provider** (`server/lib/birdnet-provider.js`) — optional (`BIRDNET_ENABLED=true` *and* `BIRDNET_GO_URL`). Pages through `GET /api/v2/detections` (newest-first, 100 per page), stopping at the last synced `birdnet_detection_id` or the `BIRDNET_LOOKBACK_HOURS` cutoff. Detections at or above `BIRDNET_MIN_CONFIDENCE` are persisted: the audio clip is downloaded (`GET /api/v2/audio/{id}`) into the dated `downloads/YYYY/M/D/` tree, and a per-species clipart image is downloaded once (`GET /api/v2/media/species-image?name={scientificName}`) and reused for every future detection of that species. Audio identifications are **not** correlated to video clips — they're an independent record stream keyed by BirdNET-Go's own detection ID.
 - **Retention** (`server/lib/retention.js`) — deletes clips + identifications (by `created_at`) and audio identifications (by `detected_at`, compared via SQLite `julianday()` since BirdNET-Go timestamps carry a UTC offset) older than `RETENTION_DAYS`, then removes `downloads/YYYY/M/D/` directories older than the cutoff day (and empty month/year dirs). `downloads/species/` is never pruned — it's a small persistent per-species cache.
 - **Storage** (`server/lib/storage.js` → `server/lib/sqlite-storage.js`) — facade over a swappable provider. The SQLite provider uses `better-sqlite3` with WAL mode and foreign keys on, creates the schema with `CREATE TABLE IF NOT EXISTS`, seeds default `ai_prompt`/`ai_model` settings on first run, and runs an in-place migration for the legacy `identifications.model` column. `commit()` is a no-op (writes are immediate). New storage methods must be added to both the facade and the SQLite provider.
@@ -127,7 +128,7 @@ The server and client each have a Vitest suite (`server/test/`, `client/test/`);
 ### Client
 
 - **Next.js 16 + React 19** with App Router, TypeScript, and Tailwind CSS v4.
-- **Static export** — `next.config.ts` sets `output: "export"`, `trailingSlash: true`, and `outputFileTracingRoot` to the repo root so the DB symlink resolves. All pages are server components rendered at build time; `[date]` uses `generateStaticParams()` from `getAvailableDates()`.
+- **Static export** — `next.config.ts` sets `output: "export"`, `trailingSlash: true`, and `outputFileTracingRoot` to the repo root so the `client/data` symlink resolves. All pages are server components rendered at build time; `[date]` uses `generateStaticParams()` from `getAvailableDates()`.
 - **Routes:** `/` (intro + 8 most recent dates), `/all-dates/`, `/[date]/` (summary + combined feed), `/settings/` (active AI model/prompt).
 - **Internal links** — use `pageHref()` from `client/lib/links.ts` for links between pages: it emits `/path/index.html` in production (S3 has no directory-index rewriting) and `/path/` in dev.
 - **Combined feed** (`client/app/[date]/clip-grid.tsx`, the only client component) — merges video clips and BirdNET-Go audio identifications into one feed, newest first. Two independent toggle buttons show/hide video and audio items. Video cards show the thumbnail, each identification (species/gender/count/confidence, or the non-bird label in red), and the AI model. Audio cards show the cached species clipart (or a 🐦 fallback), species/confidence, and an inline `<audio>` player. Clicking a thumbnail or species image opens a lightbox modal (closable via click-outside, ×, or Escape). Formatted times are computed server-side and passed in as `clipTimes`/`audioTimes` maps to avoid hydration timezone mismatches.
@@ -145,7 +146,7 @@ The server and client each have a Vitest suite (`server/test/`, `client/test/`);
 
 **species_images** — `id` (autoincrement PK), `scientific_name` (unique — reuse key), `common_name`, `local_path`, `created_at`. One clipart image per species, fetched from BirdNET-Go once and referenced by every matching `audio_identifications` row.
 
-**settings** — `id` (autoincrement PK), `name`, `value`, `is_active` (boolean). Used for `ai_model` and `ai_prompt`. Settings are versioned: identifications reference the exact row used, so to change the model/prompt insert a new row and flip `is_active` rather than editing an existing row's `value`.
+**settings** — `id` (autoincrement PK), `name`, `value`, `is_active` (boolean). Index on `name`. Used for `ai_model` and `ai_prompt`. Settings are versioned: identifications reference the exact row used, so to change the model/prompt insert a new row and flip `is_active` rather than editing an existing row's `value`.
 
 Schema changes go in `SQLiteStorage._createSchema()`; existing databases need an explicit migration (see `_migrateIdentifications()` for the pattern), since `CREATE TABLE IF NOT EXISTS` won't add columns. Update the client's row interfaces in `client/lib/db.ts` to match.
 
@@ -153,7 +154,7 @@ Schema changes go in `SQLiteStorage._createSchema()`; existing databases need an
 
 Environment config via `.env` in each directory (see each `.env.example`):
 
-- **Server** — `GOOGLE_API_KEY`, `PROCESS_DELAY`; `CAMERA_NAME`, `CHECK_INTERVAL`, `DATA_DIR`, `DOWNLOAD_DIR`, `RETENTION_DAYS`, `VIDEO_COOLDOWN_SECONDS`; `UPLOAD_DIR`, `FTP_HOST`, `FTP_PORT`, `FTP_USERNAME`, `FTP_PASSWORD`, `FTP_PASV_URL`, `FTP_PASV_MIN`, `FTP_PASV_MAX`; `BIRDNET_ENABLED`, `BIRDNET_GO_URL`, `BIRDNET_MIN_CONFIDENCE`, `BIRDNET_LOOKBACK_HOURS`. `FTP_PASV_URL` must be the LAN IP of the host running the server (required for passive-mode transfers).
+- **Server** — `GOOGLE_API_KEY`, `PROCESS_DELAY`; `CAMERA_NAME`, `CHECK_INTERVAL`, `DATA_DIR`, `DOWNLOAD_DIR`, `RETENTION_DAYS`, `VIDEO_COOLDOWN_SECONDS`; `UPLOAD_DIR`, `FTP_HOST`, `FTP_PORT`, `FTP_USERNAME`, `FTP_PASSWORD`, `FTP_PASV_URL`, `FTP_PASV_MIN`, `FTP_PASV_MAX`; `BIRDNET_ENABLED`, `BIRDNET_GO_URL`, `BIRDNET_MIN_CONFIDENCE`, `BIRDNET_LOOKBACK_HOURS`. `FTP_PASV_URL` must be the LAN IP of the host running the server (required for passive-mode transfers). `DOWNLOAD_DIR` has no code default (unlike `DATA_DIR` → `./data` and `UPLOAD_DIR` → `./uploads`), so `initializeApp()` throws if it's unset — keep it in `.env`.
 - **Client / publish** — `SCHEDULED_PUBLISH_CLIENT_DIR`, `SCHEDULED_PUBLISH_S3_BUCKET`, `SCHEDULED_PUBLISH_S3_PREFIX`, `SCHEDULED_PUBLISH_CLOUDFRONT_DISTRIBUTION_ID`, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_REGION`, `RETENTION_DAYS`, `CLOUDFLARE_ANALYTICS_TOKEN`.
 
 When adding an env var, update the relevant `.env.example`, the README, and this file.
