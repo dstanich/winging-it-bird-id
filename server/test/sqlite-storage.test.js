@@ -458,6 +458,14 @@ describe('SQLiteStorage', () => {
       expect(audioRows().map(r => r.birdnet_detection_id)).toEqual([2, 3]);
     });
 
+    it('pruneAudioIdentificationsBefore compares offset-style detected_at values as instants', () => {
+      // Cutoff is 17:00Z. As strings both rows sort before it; as instants only the first is older.
+      storage.addAudioIdentification(detection({ birdnet_detection_id: 1, detected_at: '2026-01-02T11:59:59-05:00' })); // 16:59:59Z
+      storage.addAudioIdentification(detection({ birdnet_detection_id: 2, detected_at: '2026-01-02T12:30:00-05:00' })); // 17:30:00Z
+      expect(storage.pruneAudioIdentificationsBefore('2026-01-02T17:00:00.000Z')).toEqual({ audioIdentificationsDeleted: 1 });
+      expect(audioRows().map(r => r.birdnet_detection_id)).toEqual([2]);
+    });
+
     it('getSpeciesImage returns null for an unknown species', () => {
       expect(storage.getSpeciesImage('Nope nope')).toBeNull();
     });

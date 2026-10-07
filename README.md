@@ -49,6 +49,10 @@ The client is a Next.js application that is statically exported into files then 
 2. `cd client && npm install`
 3. `npm run dev` → http://localhost:3000 (no `.env` file needed for local dev)
 
+#### Tests
+
+`cd client && npm test` runs the [Vitest](https://vitest.dev) suite in `client/test/` (`npm run test:watch` for watch mode). It covers `lib/` (data queries run against a temp SQLite database, never `client/data/`) and the `ClipGrid` component (React Testing Library + jsdom). The page components and the scheduled-publish script aren't tested.
+
 For building the static export and publishing it to production, see [Scheduled Publishing](#scheduled-publishing-production) below.
 
 ## Scheduled Publishing (Production)
@@ -77,7 +81,7 @@ As with local dev, `server/data/bird-data.db` must exist and contain data before
 ## TODOs
 
 - [ ] TypeScript
-- [ ] Client tests (the server has a Vitest suite)
+- [ ] Tests for client pages and the scheduled-publish script
 - [ ] Linting
 - [ ] Graphing and other nice visualizations
 

@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import path from "path";
 
 interface ClipRow {
-  id: string;
+  id: number;
   created_at: string;
   local_thumbnail_path: string;
   time_zone: string;
@@ -10,7 +10,7 @@ interface ClipRow {
   species: string | null;
   gender: string | null;
   count: number | null;
-  confidence: string | null;
+  confidence: number | null;
   non_bird_species: string | null;
   ai_model_id: number | null;
   ai_prompt_id: number | null;
@@ -22,13 +22,13 @@ export interface Identification {
   species: string | null;
   gender: string | null;
   count: number | null;
-  confidence: string | null;
+  confidence: number | null;
   nonBirdSpecies: string | null;
   model: string | null;
 }
 
 export interface Clip {
-  id: string;
+  id: number;
   createdAt: string;
   thumbnailPath: string;
   identifications: Identification[];
@@ -85,8 +85,8 @@ function toHumanDate(isoString: string): string {
 }
 
 function buildClips(rows: ClipRow[]): Clip[] {
-  const clipMap = new Map<string, Clip>();
-  const clipOrder: string[] = [];
+  const clipMap = new Map<number, Clip>();
+  const clipOrder: number[] = [];
 
   for (const row of rows) {
     if (!clipMap.has(row.id)) {
@@ -122,7 +122,7 @@ export function getAvailableDates(): string[] {
     .prepare(`SELECT DISTINCT created_at as ts FROM clips WHERE created_at >= ?`)
     .all(cutoffIso) as { ts: string }[];
   const audioRows = db
-    .prepare(`SELECT DISTINCT detected_at as ts FROM audio_identifications WHERE detected_at >= ?`)
+    .prepare(`SELECT DISTINCT detected_at as ts FROM audio_identifications WHERE julianday(detected_at) >= julianday(?)`)
     .all(cutoffIso) as { ts: string }[];
 
   db.close();
@@ -146,7 +146,7 @@ export function getClipsForDate(date: string): Clip[] {
        LEFT JOIN identifications i ON c.id = i.clip_id
        LEFT JOIN settings s ON i.ai_model_id = s.id
        WHERE c.created_at >= ?
-       ORDER BY c.created_at DESC`
+       ORDER BY c.created_at DESC, i.id ASC`
     )
     .all(cutoffIso) as ClipRow[];
 
@@ -165,8 +165,8 @@ export function getAudioIdentificationsForDate(date: string): AudioIdentificatio
               s.local_path as species_image_path
        FROM audio_identifications a
        LEFT JOIN species_images s ON a.species_image_id = s.id
-       WHERE a.detected_at >= ?
-       ORDER BY a.detected_at DESC`
+       WHERE julianday(a.detected_at) >= julianday(?)
+       ORDER BY julianday(a.detected_at) DESC`
     )
     .all(cutoffIso) as AudioIdentificationRow[];
 
@@ -329,5 +329,6 @@ export function getActiveSettings(): ActiveSettings {
 }
 
 export function formatDateHeading(date: string): string {
-  return toHumanDate(date + "T12:00:00");
+  // UTC noon is 6-7 AM in Chicago, so the day can't shift regardless of the host time zone.
+  return toHumanDate(date + "T12:00:00Z");
 }

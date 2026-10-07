@@ -341,7 +341,8 @@ export class SQLiteStorage {
     }
 
     pruneAudioIdentificationsBefore(cutoffIso) {
-        const result = this.db.prepare('DELETE FROM audio_identifications WHERE detected_at < ?').run(cutoffIso);
+        // BirdNET-Go timestamps carry a UTC offset (e.g. -05:00), so compare instants, not strings.
+        const result = this.db.prepare('DELETE FROM audio_identifications WHERE julianday(detected_at) < julianday(?)').run(cutoffIso);
         return { audioIdentificationsDeleted: result.changes };
     }
 }

@@ -105,11 +105,11 @@ export function ClipGrid({
                         <p>
                           {ident.species}
                           {ident.gender && ident.gender !== "unknown" ? ` (${ident.gender})` : ""}
-                          {ident.count && ident.count > 1 ? ` ×${ident.count}` : ""}
+                          {ident.count != null && ident.count > 1 ? ` ×${ident.count}` : ""}
                         </p>
                         {ident.confidence != null && (
                           <p className="text-xs text-zinc-400">
-                            {Math.round(parseFloat(ident.confidence) * 100)}% confidence
+                            {Math.round(ident.confidence * 100)}% confidence
                           </p>
                         )}
                       </div>
@@ -118,7 +118,7 @@ export function ClipGrid({
                         <p>{ident.nonBirdSpecies ?? "Not a bird"}</p>
                         {ident.confidence != null && (
                           <p className="text-xs text-zinc-400">
-                            {Math.round(parseFloat(ident.confidence) * 100)}% confidence
+                            {Math.round(ident.confidence * 100)}% confidence
                           </p>
                         )}
                       </div>

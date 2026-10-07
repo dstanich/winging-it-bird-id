@@ -39,6 +39,8 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   ├── lib/
 │   │   ├── db.ts                  # SQLite queries (build-time only)
 │   │   └── links.ts               # pageHref(): internal link helper for S3-compatible URLs
+│   ├── test/                      # Vitest suite: db, links, clip-grid tests, plus setup.ts + helpers.ts
+│   ├── vitest.config.mts
 │   ├── public/
 │   │   ├── images/                # Logo, favicons, GitHub mark, feeder photo
 │   │   └── downloads/             # Server's downloads/ dir must be available here (git-ignored; volume mount in Docker)
@@ -75,6 +77,7 @@ npm test                   # vitest run: the server test suite (npm run test:wat
 npm run dev                # Next.js dev server on http://localhost:3000 (no .env needed)
 npm run build              # Static export build (outputs to client/out/)
 npm run lint               # ESLint (eslint-config-next core-web-vitals + typescript)
+npm test                   # vitest run: the client test suite (npm run test:watch for watch mode)
 ```
 
 ### Scheduled publish (`cd client/scripts/scheduled-publish`)
@@ -83,7 +86,7 @@ npm run lint               # ESLint (eslint-config-next core-web-vitals + typesc
 npm start                  # Build + publish immediately, then repeat every 5 hours (needs S3/AWS env vars)
 ```
 
-The server has a Vitest suite (`server/test/`); the client and publish script have no tests, and the server has no linter. Verify server changes with `npm test` (add/update tests alongside behavior changes) and, for loop/FTP wiring in `index.js`, by running `npm start` against a scratch `DATA_DIR`; verify client changes with `npm run lint` and `npm run build`.
+The server and client each have a Vitest suite (`server/test/`, `client/test/`); the publish script has no tests, and the server has no linter. Verify server changes with `npm test` (add/update tests alongside behavior changes) and, for loop/FTP wiring in `index.js`, by running `npm start` against a scratch `DATA_DIR`; verify client changes with `npm test`, `npm run lint`, and `npm run build` (add/update tests alongside changes to `lib/` or `clip-grid.tsx`).
 
 ### Server tests
 
@@ -94,6 +97,13 @@ The server has a Vitest suite (`server/test/`); the client and publish script ha
 - Time-dependent tests use `vi.useFakeTimers({ toFake: ['Date'] })` + `vi.setSystemTime()`; time-zone tests use `vi.stubEnv('TZ', ...)` (Node picks up `TZ` changes at runtime).
 - `test/storage.test.js` fails if a `Storage` facade method is missing from `SQLiteStorage` or from its delegation-args table, enforcing the "add to both" rule below.
 - `index.js` itself is not unit-tested (it starts the FTP server on import); keep testable logic in `lib/` modules.
+
+### Client tests
+
+- **Vitest 4** + React Testing Library + `@testing-library/user-event`. Config in `client/vitest.config.mts` (maps the `@/` alias; `restoreMocks`/`unstubEnvs`/`unstubGlobals` on). Default environment is `node`; `clip-grid.test.tsx` opts into jsdom with a `// @vitest-environment jsdom` docblock and calls RTL `cleanup` itself (globals are off). `test/setup.ts` registers jest-dom matchers.
+- `test/helpers.ts`: `createTempDirFactory()` (temp dirs with per-test cleanup — not named `use*`, which would trip the React hooks lint rule) and `createTestDb(dir)`, which creates `<dir>/data/bird-data.db` with a copy of the server schema plus insert helpers. **If the server schema changes in a way the client queries, update this copy.**
+- `lib/db.ts` computes its retention cutoff at import time and opens `process.cwd()/data/bird-data.db`, so `db.test.ts` fakes `Date`, spies `process.cwd()` to the temp dir, and re-imports the module per test (`vi.resetModules()` + dynamic import) after stubbing env like `RETENTION_DAYS`/`TZ`.
+- The pages and the scheduled-publish script are untested.
 
 ## Architecture
 
@@ -111,7 +121,7 @@ The server has a Vitest suite (`server/test/`); the client and publish script ha
 - **Clip discovery** (`server/lib/ftp-clips.js`) — walks `UPLOAD_DIR` (plus one level of subdirectories) for `mp4/264/265/h264/h265` files, parses Reolink's FTP filename convention `[Camera]_[Channel]_[YYYYMMDDHHMMSS].ext` (timestamp interpreted in the **server's local time zone**; falls back to file mtime + `CAMERA_NAME` if unmatched). **Clip ID = recording time in Unix seconds**, which is also the dedupe key: uploads whose ID is already in `storage.data()`, or that repeat an ID already yielding a clip in the same scan (e.g. two channels in the same second), are skipped and their video deleted. Extracts a JPEG frame at the 1-second mark via `ffmpeg-static`/`fluent-ffmpeg` (fixed offset, because `ffmpeg-static` doesn't bundle `ffprobe`), skipping extraction if the thumbnail already exists.
 - **AI provider** (`server/lib/ai-provider.js`) — sends the base64 JPEG plus the active prompt to Gemini via `@google/genai` (default model `gemini-2.5-flash`), parses the JSON response (normalizing a single object to an array), and tags each result with the `ai_model_id`/`ai_prompt_id` settings row IDs used. A clip can produce multiple identification rows (one per species).
 - **BirdNET-Go provider** (`server/lib/birdnet-provider.js`) — optional (`BIRDNET_ENABLED=true` *and* `BIRDNET_GO_URL`). Pages through `GET /api/v2/detections` (newest-first, 100 per page), stopping at the last synced `birdnet_detection_id` or the `BIRDNET_LOOKBACK_HOURS` cutoff. Detections at or above `BIRDNET_MIN_CONFIDENCE` are persisted: the audio clip is downloaded (`GET /api/v2/audio/{id}`) into the dated `downloads/YYYY/M/D/` tree, and a per-species clipart image is downloaded once (`GET /api/v2/media/species-image?name={scientificName}`) and reused for every future detection of that species. Audio identifications are **not** correlated to video clips — they're an independent record stream keyed by BirdNET-Go's own detection ID.
-- **Retention** (`server/lib/retention.js`) — deletes clips + identifications (by `created_at`) and audio identifications (by `detected_at`) older than `RETENTION_DAYS`, then removes `downloads/YYYY/M/D/` directories older than the cutoff day (and empty month/year dirs). `downloads/species/` is never pruned — it's a small persistent per-species cache.
+- **Retention** (`server/lib/retention.js`) — deletes clips + identifications (by `created_at`) and audio identifications (by `detected_at`, compared via SQLite `julianday()` since BirdNET-Go timestamps carry a UTC offset) older than `RETENTION_DAYS`, then removes `downloads/YYYY/M/D/` directories older than the cutoff day (and empty month/year dirs). `downloads/species/` is never pruned — it's a small persistent per-species cache.
 - **Storage** (`server/lib/storage.js` → `server/lib/sqlite-storage.js`) — facade over a swappable provider. The SQLite provider uses `better-sqlite3` with WAL mode and foreign keys on, creates the schema with `CREATE TABLE IF NOT EXISTS`, seeds default `ai_prompt`/`ai_model` settings on first run, and runs an in-place migration for the legacy `identifications.model` column. `commit()` is a no-op (writes are immediate). New storage methods must be added to both the facade and the SQLite provider.
 
 ### Client
@@ -122,7 +132,7 @@ The server has a Vitest suite (`server/test/`); the client and publish script ha
 - **Internal links** — use `pageHref()` from `client/lib/links.ts` for links between pages: it emits `/path/index.html` in production (S3 has no directory-index rewriting) and `/path/` in dev.
 - **Combined feed** (`client/app/[date]/clip-grid.tsx`, the only client component) — merges video clips and BirdNET-Go audio identifications into one feed, newest first. Two independent toggle buttons show/hide video and audio items. Video cards show the thumbnail, each identification (species/gender/count/confidence, or the non-bird label in red), and the AI model. Audio cards show the cached species clipart (or a 🐦 fallback), species/confidence, and an inline `<audio>` player. Clicking a thumbnail or species image opens a lightbox modal (closable via click-outside, ×, or Escape). Formatted times are computed server-side and passed in as `clipTimes`/`audioTimes` maps to avoid hydration timezone mismatches.
 - **Media paths** — the DB stores paths like `downloads/2026/7/4/1751652000.jpg` (relative to the server's working dir), and the client renders them as `/${path}`. So the server's `downloads/` directory must be exposed at `client/public/downloads/` (Docker volume mount in production); the publish script also copies `public/downloads` into `out/` explicitly.
-- **Data access** (`client/lib/db.ts`) — opens the SQLite DB read-only via `better-sqlite3` at build time, a fresh connection per query. Only rows newer than `RETENTION_DAYS` (default 60) are included. `getAvailableDates` unions dates from `clips` and `audio_identifications`; `getClipsForDate` joins identifications and the model setting; `getAudioIdentificationsForDate` joins `species_images`; `getDateSummary` computes video (clips, birds, non-birds, most common, busiest hour, unique species) and audio (detections, species heard, most common, busiest hour) stats; `getActiveSettings` backs the settings page. **All date bucketing and time display use the `America/Chicago` timezone**; dates are formatted with the `en-CA` locale to get `YYYY-MM-DD` URL paths. Filtering by date happens in JS after the query, not in SQL.
+- **Data access** (`client/lib/db.ts`) — opens the SQLite DB read-only via `better-sqlite3` at build time, a fresh connection per query. Only rows newer than `RETENTION_DAYS` (default 60) are included. `getAvailableDates` unions dates from `clips` and `audio_identifications`; `getClipsForDate` joins identifications (ordered by `identifications.id` within a clip, so the first is the earliest-stored) and the model setting; `getAudioIdentificationsForDate` joins `species_images`. BirdNET-Go's `detected_at` carries a UTC offset (e.g. `-05:00`), so audio retention and ordering compare via SQLite `julianday()` rather than as strings; `getDateSummary` computes video (clips, birds, non-birds, most common, busiest hour, unique species) and audio (detections, species heard, most common, busiest hour) stats; `getActiveSettings` backs the settings page. **All date bucketing and time display use the `America/Chicago` timezone**; dates are formatted with the `en-CA` locale to get `YYYY-MM-DD` URL paths. `formatDateHeading` anchors `YYYY-MM-DD` dates at UTC noon so the host time zone can't shift the day. Filtering by date happens in JS after the query, not in SQL.
 - **Scheduled publishing** (`client/scripts/scheduled-publish/index.js`) — loop (immediately, then every 5 hours): `npm run build`, copy `public/downloads` into `out/`, upload changed files to S3 (skips unchanged via ETag/MD5 compare), delete S3 objects no longer in the build (skipped if fewer than 10 local files, guarding against a broken build wiping the bucket), then invalidate CloudFront `/*` if anything changed.
 
 ### Database Schema
