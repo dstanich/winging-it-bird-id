@@ -412,7 +412,7 @@ describe("getDateSummary", () => {
 
     expect(summary.video.clipCount).toBe(2);
     expect(summary.video.birdCount).toBe(5);
-    expect(summary.video.mostCommonBirds).toEqual(["house finch"]);
+    expect(summary.video.mostCommonBirds).toEqual(["House Finch"]);
     expect(summary.video.uniqueSpeciesCount).toBe(2);
   });
 
@@ -445,7 +445,35 @@ describe("getDateSummary", () => {
       clip("2026-07-04T14:00:00Z", [ident({ species: "mourning dove", count: 1 })]),
     ]);
 
-    expect(summary.video.mostCommonBirds).toEqual(["house finch", "blue jay"]);
+    expect(summary.video.mostCommonBirds).toEqual(["House Finch", "Blue Jay"]);
+  });
+
+  it("title-cases each word of the most common bird, leaving hyphenated parts lowercase", async () => {
+    const { getDateSummary } = await loadDb();
+    const summary = getDateSummary([clip("2026-07-04T13:00:00Z", [ident({ species: "black-capped chickadee" })])]);
+
+    expect(summary.video.mostCommonBirds).toEqual(["Black-capped Chickadee"]);
+  });
+
+  it("excludes unknown birds and non-birds from the most common bird", async () => {
+    const { getDateSummary } = await loadDb();
+    const summary = getDateSummary([
+      clip("2026-07-04T13:00:00Z", [ident({ species: "unknown", count: 5 }), ident({ species: "Unknown Bird", count: 4 })]),
+      clip("2026-07-04T14:00:00Z", [ident({ isBird: false, species: null, nonBirdSpecies: "squirrel", count: 6 })]),
+      clip("2026-07-04T15:00:00Z", [ident({ species: "house sparrow", count: 1 })]),
+    ]);
+
+    expect(summary.video.mostCommonBirds).toEqual(["House Sparrow"]);
+    expect(summary.video.uniqueSpeciesCount).toBe(1);
+  });
+
+  it("has no most common bird when every bird is unknown", async () => {
+    const { getDateSummary } = await loadDb();
+    const summary = getDateSummary([clip("2026-07-04T13:00:00Z", [ident({ species: "unknown bird" })])]);
+
+    expect(summary.video.mostCommonBirds).toEqual([]);
+    expect(summary.video.uniqueSpeciesCount).toBe(0);
+    expect(summary.video.birdCount).toBe(1);
   });
 
   it("counts clips with no identifications toward clipCount and busiest hour", async () => {

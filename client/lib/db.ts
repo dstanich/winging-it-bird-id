@@ -228,6 +228,16 @@ function findBusiestHour(isoTimestamps: string[]): string | null {
   return `${fmt(peakHour)} – ${fmt(peakHour + 1)}`;
 }
 
+/** Species names the AI uses when it can't identify the bird, e.g. "unknown" or "unknown bird". */
+function isUnknownSpecies(species: string): boolean {
+  return /\b(unknown|unidentified)\b/i.test(species);
+}
+
+/** Capitalizes each space-separated word: "black-capped chickadee" → "Black-capped Chickadee". */
+export function toTitleCase(name: string): string {
+  return name.replace(/(^|\s)(\S)/g, (_, space: string, ch: string) => space + ch.toUpperCase());
+}
+
 export function getDateSummary(clips: Clip[], audioIdentifications: AudioIdentification[] = []): DateSummary {
   let videoBirdCount = 0;
   let videoNonBirdCount = 0;
@@ -248,10 +258,11 @@ export function getDateSummary(clips: Clip[], audioIdentifications: AudioIdentif
   }
 
   let videoMostCommonBirds: string[] = [];
+  const knownSpeciesCounts = [...videoSpeciesCounts.entries()].filter(([s]) => !isUnknownSpecies(s));
 
-  if (videoSpeciesCounts.size > 0) {
-    const maxCount = Math.max(...videoSpeciesCounts.values());
-    videoMostCommonBirds = [...videoSpeciesCounts.entries()].filter(([, c]) => c === maxCount).map(([s]) => s);
+  if (knownSpeciesCounts.length > 0) {
+    const maxCount = Math.max(...knownSpeciesCounts.map(([, c]) => c));
+    videoMostCommonBirds = knownSpeciesCounts.filter(([, c]) => c === maxCount).map(([s]) => toTitleCase(s));
   }
 
   const videoBusiestHour = findBusiestHour(clips.map((c) => c.createdAt));
@@ -282,7 +293,7 @@ export function getDateSummary(clips: Clip[], audioIdentifications: AudioIdentif
       nonBirdCount: videoNonBirdCount,
       mostCommonBirds: videoMostCommonBirds,
       busiestHour: videoBusiestHour,
-      uniqueSpeciesCount: videoSpeciesCounts.size,
+      uniqueSpeciesCount: knownSpeciesCounts.length,
     },
     audio: {
       detectionCount: audioIdentifications.length,
