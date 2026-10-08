@@ -146,14 +146,27 @@ export function ClipGrid({
         <div>
           <label className="inline-flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
             Sort by:
-            <select
-              value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value as SortOrder)}
-              className="rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm text-zinc-700 dark:text-zinc-300 cursor-pointer"
-            >
-              <option value="time">Time (newest first)</option>
-              <option value="species">Species (A–Z)</option>
-            </select>
+            {/* Native select arrows ignore padding (they hug the border), so hide it and draw our own chevron */}
+            <span className="relative inline-flex items-center">
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as SortOrder)}
+                className="appearance-none rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 py-1 pl-2.5 pr-8 text-sm text-zinc-700 dark:text-zinc-300 cursor-pointer"
+              >
+                <option value="time">Time (newest first)</option>
+                <option value="species">Species (A–Z)</option>
+              </select>
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 16 16"
+                className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-zinc-500 dark:text-zinc-400"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
           </label>
         </div>
       </div>
