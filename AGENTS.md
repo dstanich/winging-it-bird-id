@@ -55,6 +55,7 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 ├── .claude/
 │   ├── settings.json              # Shared Claude Code permissions (npm lint/build/install/ci + read-only git/sqlite allowed; .env reads denied)
 │   └── launch.json                # Claude Code preview config: client dev server on :3000
+├── docker-compose.yml             # Production deploy: server + publish containers, external named volumes, env from server/.env + client/.env
 ├── .nvmrc                         # lts/krypton (Node 24) for local dev; Docker images use node:20
 ├── README.md                      # Human-facing setup docs (keep in sync with this file)
 ├── CLAUDE.md                      # Just `@./AGENTS.md`
@@ -179,7 +180,8 @@ When adding an env var, update the relevant `.env.example`, the README, and this
 - Uploaded videos are deleted once successfully processed into a thumbnail + DB row (or when discarded by the cooldown, or found to be duplicates); downloads organized by date: `server/downloads/YYYY/M/D/` (month/day not zero-padded).
 - BirdNET-Go audio sync is optional and entirely separate from FTP/video processing.
 - Client: Tailwind utility classes with `dark:` variants for every color (dark mode is supported everywhere); zinc palette, blue-600/blue-400 links. Path alias `@/*` → `client/`. Plain `<img>`/`<a>` tags are used deliberately (static export, no image optimization).
-- Server Dockerfile: `node:20-slim` + build tools for `better-sqlite3`; `npm ci --omit=dev` (no test tooling in the image; `package.json` `engines` requires Node >= 20.19); volumes for `data/` and `downloads/` (note: `uploads/` is not a volume); exposes FTP control port `2121` and passive port range `30100-30110`.
+- Server Dockerfile: `node:20-slim` + build tools for `better-sqlite3`; `npm ci --omit=dev` (no test tooling in the image; `package.json` `engines` requires Node >= 20.19); declares volumes for `data/` and `downloads/` (`uploads/` isn't declared in the Dockerfile but is mounted by compose so failed clips survive recreates); exposes FTP control port `2121` and passive port range `30100-30110`.
 - Client Dockerfile: `node:20`; installs client + scheduled-publish deps, runs the publish script; volumes `/app/data` (DB) and `/app/public/downloads` (media).
+- Deployment: root `docker-compose.yml` runs both containers on one host (`git pull && docker compose up -d --build`). Env comes from `server/.env`/`client/.env` via `env_file` at container creation (`.dockerignore` keeps `.env` out of images), so `.env` edits only need `docker compose up -d`, not a rebuild. Volumes `birdid-data`, `birdid-downloads`, `birdid-uploads` are `external: true` (created once with `docker volume create`; compose never deletes them) and mounted `:z` for SELinux. The publish container mounts `birdid-data` read-write because WAL-mode SQLite readers write the `-shm` file. FTP port mappings are hard-coded and must match `FTP_PORT`/`FTP_PASV_MIN`/`FTP_PASV_MAX`.
 - Commit messages follow Conventional Commits with a scope, e.g. `fix(server): ...`, `feat(client): ...`, `docs: ...`, `chore: ...`.
 - When behavior changes, keep `README.md` and this file in sync (see "Keeping These Docs Current" above).

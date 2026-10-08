@@ -32,7 +32,7 @@ The server is a Node.js application that runs a local FTP server for the camera 
 3. In the Reolink camera's own admin settings, configure FTP upload to point at this host/port with the same username/password, so it pushes recordings here on motion.
 4. `npm start` — starts the FTP listener and the periodic clip-processing loop.
 
-Alternatively, run via Docker: the `Dockerfile` exposes the FTP control port (`2121`) and passive port range (`30100-30110`), with volumes for `data/` and `downloads/`.
+Alternatively, run it with the scheduled publisher via Docker Compose — see [Deploying with Docker](#deploying-with-docker).
 
 #### Test clips without the camera
 
@@ -79,9 +79,38 @@ For building the static export and publishing it to production, see [Scheduled P
    - `CLOUDFLARE_ANALYTICS_TOKEN` — optional; enables the analytics script tag in `client/app/layout.tsx`
 3. `cd client/scripts/scheduled-publish && npm start` — runs immediately, then repeats every 5 hours for as long as the process stays alive.
 
-Alternatively, run via Docker: `client/Dockerfile` is built specifically for this job (installs both the client and scheduled-publish dependencies, and runs the publish script). It expects volumes at `/app/data` (the SQLite database the server produces) and `/app/public/downloads` (thumbnails), plus the same environment variables passed in. It is not used for local `npm run dev`.
+Alternatively, run via Docker: `client/Dockerfile` is built specifically for this job (installs both the client and scheduled-publish dependencies, and runs the publish script). It expects volumes at `/app/data` (the SQLite database the server produces) and `/app/public/downloads` (thumbnails), plus the same environment variables passed in. It is not used for local `npm run dev`. The root `docker-compose.yml` wires this up alongside the server — see [Deploying with Docker](#deploying-with-docker).
 
 As with local dev, `server/data/bird-data.db` must exist and contain data before running a publish.
+
+## Deploying with Docker
+
+The root `docker-compose.yml` runs both the server (`server/Dockerfile`) and the scheduled publisher (`client/Dockerfile`) on one host, sharing the database and media through named volumes. Environment variables are read from `server/.env` and `client/.env` when containers are created; they're excluded from the images by `.dockerignore`, so changing them never needs an image rebuild.
+
+**First-time setup on the host:**
+
+1. `git clone git@github.com:dstanich/winging-it-bird-id.git && cd winging-it-bird-id`
+2. Create `server/.env` and `client/.env` from their `.env.example` files. Keep `DATA_DIR`, `DOWNLOAD_DIR`, and `UPLOAD_DIR` at their relative defaults (`./data`, `./downloads`, `./uploads`) so they land in the mounted volumes; `FTP_PASV_URL` is the host's LAN IP.
+3. Create the volumes once (skip any that already exist — compose treats them as external and never creates or deletes them):
+   ```bash
+   docker volume create birdid-data
+   docker volume create birdid-downloads
+   docker volume create birdid-uploads
+   ```
+4. `docker compose up -d --build`
+
+**Day to day:**
+
+| Task | Command |
+|---|---|
+| Deploy new code | `git pull && docker compose up -d --build` |
+| Apply `.env` changes | `docker compose up -d` (recreates only the containers whose config changed) |
+| Follow logs | `docker compose logs -f server` (or `publish`) |
+| Stop everything | `docker compose down` (volumes and data are kept) |
+
+The FTP port mappings in `docker-compose.yml` (`2121`, `30100-30110`) are fixed; if you change `FTP_PORT` or `FTP_PASV_MIN`/`FTP_PASV_MAX`, update the compose file to match. Volumes are mounted with `:z` for SELinux hosts, which is harmless elsewhere.
+
+**Migrating from hand-run containers:** remove the old containers with `docker rm -f <name>` (no `-v`, so the named volumes are kept), then run `docker compose up -d --build`. They must be removed first because they hold the FTP ports.
 
 ## TODOs
 
