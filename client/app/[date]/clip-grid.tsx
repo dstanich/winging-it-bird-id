@@ -8,9 +8,39 @@ type FeedItem =
   | { type: "video"; timestamp: string; clip: Clip }
   | { type: "audio"; timestamp: string; audio: AudioIdentification };
 
+type SortOrder = "time" | "species";
+
 /** A clip is worth showing by default only if the AI named at least one bird species. */
 function hasKnownBird(clip: Clip): boolean {
   return clip.identifications.some((ident) => ident.isBird && isKnownSpecies(ident.species));
+}
+
+/**
+ * The species a feed item sorts under: the first known bird identification for a video clip, or the
+ * audio detection's species. Lowercased because the AI stores lowercase names and BirdNET-Go doesn't.
+ * Null when there's no known bird species (those items sort last).
+ */
+function sortSpecies(item: FeedItem): string | null {
+  const species =
+    item.type === "video"
+      ? item.clip.identifications.find((ident) => ident.isBird && isKnownSpecies(ident.species))?.species ?? null
+      : item.audio.species;
+  return isKnownSpecies(species) ? species.trim().toLowerCase() : null;
+}
+
+const newestFirst = (a: FeedItem, b: FeedItem) =>
+  new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+
+/** Alphabetical by species, items without a known species last, newest first within a species. */
+function bySpecies(a: FeedItem, b: FeedItem): number {
+  const sa = sortSpecies(a);
+  const sb = sortSpecies(b);
+  if (sa !== sb) {
+    if (sa === null) return 1;
+    if (sb === null) return -1;
+    return sa.localeCompare(sb);
+  }
+  return newestFirst(a, b);
 }
 
 function ToggleChip({ label, pressed, onToggle }: { label: string; pressed: boolean; onToggle: () => void }) {
@@ -56,6 +86,7 @@ export function ClipGrid({
   const [showVideo, setShowVideo] = useState(true);
   const [showAudio, setShowAudio] = useState(true);
   const [includeNonBirds, setIncludeNonBirds] = useState(false);
+  const [sortOrder, setSortOrder] = useState<SortOrder>("time");
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
 
   useEffect(() => {
@@ -82,7 +113,7 @@ export function ClipGrid({
     ...(showAudio
       ? visibleAudio.map((audio): FeedItem => ({ type: "audio", timestamp: audio.detectedAt, audio }))
       : []),
-  ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  ].sort(sortOrder === "species" ? bySpecies : newestFirst);
 
   return (
     <>
@@ -101,6 +132,19 @@ export function ClipGrid({
           />
           Include non-birds &amp; unidentified birds
         </label>
+        <div>
+          <label className="inline-flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+            Sort by:
+            <select
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value as SortOrder)}
+              className="rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm text-zinc-700 dark:text-zinc-300 cursor-pointer"
+            >
+              <option value="time">Time (newest first)</option>
+              <option value="species">Species (A–Z)</option>
+            </select>
+          </label>
+        </div>
       </div>
       <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
         <span>

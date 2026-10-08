@@ -190,6 +190,76 @@ describe("ClipGrid non-bird filter", () => {
   });
 });
 
+describe("ClipGrid sorting", () => {
+  /** Picks a sort option from the "Sort by" dropdown. */
+  async function sortBy(label: RegExp) {
+    await userEvent.setup().selectOptions(
+      screen.getByRole("combobox", { name: /sort by/i }),
+      screen.getByRole("option", { name: label })
+    );
+  }
+
+  const fixtures = () => ({
+    clips: [
+      clip(1, "2026-07-04T13:00:00Z", [ident({ species: "northern cardinal" })]),
+      clip(2, "2026-07-04T15:00:00Z", [ident({ species: "blue jay" })]),
+      clip(3, "2026-07-04T17:00:00Z", [ident({ isBird: false, species: null, nonBirdSpecies: "squirrel" })]),
+      clip(4, "2026-07-04T18:00:00Z", [ident({ species: "northern cardinal" })]),
+    ],
+    audioIdentifications: [
+      audio(1, "2026-07-04T14:00:00Z", { species: "American Robin" }),
+      audio(2, "2026-07-04T16:00:00Z", { species: "Blue Jay" }),
+    ],
+  });
+
+  it("sorts by time by default", () => {
+    renderGrid(fixtures());
+
+    expect(screen.getByRole("combobox", { name: /sort by/i })).toHaveValue("time");
+    expect(feedOrder()).toEqual(["video 4", "audio 2", "video 2", "audio 1", "video 1"]);
+  });
+
+  it("sorts alphabetically by species, case-insensitively, newest first within a species", async () => {
+    renderGrid(fixtures());
+    await sortBy(/species/i);
+
+    expect(feedOrder()).toEqual(["audio 1", "audio 2", "video 2", "video 4", "video 1"]);
+  });
+
+  it("puts items without a known bird species last", async () => {
+    renderGrid(fixtures());
+    await includeNonBirds();
+    await sortBy(/species/i);
+
+    expect(feedOrder()).toEqual(["audio 1", "audio 2", "video 2", "video 4", "video 1", "video 3"]);
+  });
+
+  it("sorts a clip by its first known bird identification", async () => {
+    renderGrid({
+      clips: [
+        clip(1, "2026-07-04T13:00:00Z", [
+          ident({ isBird: false, species: null, nonBirdSpecies: "squirrel" }),
+          ident({ species: "unknown" }),
+          ident({ species: "zebra finch" }),
+          ident({ species: "american goldfinch" }),
+        ]),
+        clip(2, "2026-07-04T14:00:00Z", [ident({ species: "mourning dove" })]),
+      ],
+    });
+    await sortBy(/species/i);
+
+    expect(feedOrder()).toEqual(["video 2", "video 1"]);
+  });
+
+  it("can switch back to time order", async () => {
+    renderGrid(fixtures());
+    await sortBy(/species/i);
+    await sortBy(/time/i);
+
+    expect(feedOrder()).toEqual(["video 4", "audio 2", "video 2", "audio 1", "video 1"]);
+  });
+});
+
 describe("ClipGrid video cards", () => {
   it("shows the time, thumbnail, identification details, and model", () => {
     renderGrid({
