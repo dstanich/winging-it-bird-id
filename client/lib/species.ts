@@ -10,3 +10,8 @@ export function isUnknownSpecies(species: string): boolean {
 export function isKnownSpecies(species: string | null): species is string {
   return species != null && species.trim() !== "" && !isUnknownSpecies(species);
 }
+
+/** Capitalizes each space-separated word: "black-capped chickadee" → "Black-capped Chickadee". */
+export function toTitleCase(name: string): string {
+  return name.replace(/(^|\s)(\S)/g, (_, space: string, ch: string) => space + ch.toUpperCase());
+}

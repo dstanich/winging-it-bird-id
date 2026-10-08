@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isKnownSpecies, isUnknownSpecies } from "@/lib/species";
+import { isKnownSpecies, isUnknownSpecies, toTitleCase } from "@/lib/species";
 
 describe("isUnknownSpecies", () => {
   it.each(["unknown", "Unknown bird", "unidentified sparrow", "bird (unknown)"])("flags %s", (name) => {
@@ -20,5 +20,15 @@ describe("isKnownSpecies", () => {
     ["northern cardinal", true],
   ])("%j → %s", (name, expected) => {
     expect(isKnownSpecies(name)).toBe(expected);
+  });
+});
+
+describe("toTitleCase", () => {
+  it.each([
+    ["house sparrow", "House Sparrow"],
+    ["black-capped chickadee", "Black-capped Chickadee"],
+    ["American Robin", "American Robin"],
+  ])("%s → %s", (name, expected) => {
+    expect(toTitleCase(name)).toBe(expected);
   });
 });

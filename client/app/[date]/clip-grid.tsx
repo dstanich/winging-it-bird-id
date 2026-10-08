@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Clip, AudioIdentification } from "@/lib/db";
-import { isKnownSpecies } from "@/lib/species";
+import { isKnownSpecies, toTitleCase } from "@/lib/species";
 
 type FeedItem =
   | { type: "video"; timestamp: string; clip: Clip }
@@ -13,6 +13,17 @@ type SortOrder = "time" | "species";
 /** A clip is worth showing by default only if the AI named at least one bird species. */
 function hasKnownBird(clip: Clip): boolean {
   return clip.identifications.some((ident) => ident.isBird && isKnownSpecies(ident.species));
+}
+
+/** Thumbnail alt text: the first identification's species, title-cased like the rest of the card. */
+function clipAlt(clip: Clip): string {
+  const species = clip.identifications[0]?.species;
+  return species ? toTitleCase(species) : "Unidentified clip";
+}
+
+/** Audio species, title-cased (BirdNET-Go names usually already are). */
+function audioSpeciesLabel(audio: AudioIdentification): string {
+  return audio.species ? toTitleCase(audio.species) : "Unidentified species";
 }
 
 /**
@@ -169,12 +180,12 @@ export function ClipGrid({
               </p>
               <img
                 src={`/${item.clip.thumbnailPath}`}
-                alt={item.clip.identifications[0]?.species ?? "Unidentified clip"}
+                alt={clipAlt(item.clip)}
                 className="w-full aspect-video object-cover cursor-pointer"
                 onClick={() =>
                   setSelectedImage({
                     src: `/${item.clip.thumbnailPath}`,
-                    alt: item.clip.identifications[0]?.species ?? "Unidentified clip",
+                    alt: clipAlt(item.clip),
                   })
                 }
               />
@@ -187,7 +198,7 @@ export function ClipGrid({
                     ident.isBird ? (
                       <div key={i} className="text-sm text-zinc-700 dark:text-zinc-300">
                         <p>
-                          {ident.species}
+                          {ident.species && toTitleCase(ident.species)}
                           {ident.gender && ident.gender !== "unknown" ? ` (${ident.gender})` : ""}
                           {ident.count != null && ident.count > 1 ? ` ×${ident.count}` : ""}
                         </p>
@@ -230,12 +241,12 @@ export function ClipGrid({
               {item.audio.speciesImagePath ? (
                 <img
                   src={`/${item.audio.speciesImagePath}`}
-                  alt={item.audio.species ?? "Unidentified species"}
+                  alt={audioSpeciesLabel(item.audio)}
                   className="w-full aspect-video object-cover cursor-pointer"
                   onClick={() =>
                     setSelectedImage({
                       src: `/${item.audio.speciesImagePath}`,
-                      alt: item.audio.species ?? "Unidentified species",
+                      alt: audioSpeciesLabel(item.audio),
                     })
                   }
                 />
@@ -245,7 +256,7 @@ export function ClipGrid({
                 </div>
               )}
               <div className="p-2">
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">{item.audio.species ?? "Unidentified species"}</p>
+                <p className="text-sm text-zinc-700 dark:text-zinc-300">{audioSpeciesLabel(item.audio)}</p>
                 {item.audio.confidence != null && (
                   <p className="text-xs text-zinc-400">{Math.round(item.audio.confidence * 100)}% confidence</p>
                 )}

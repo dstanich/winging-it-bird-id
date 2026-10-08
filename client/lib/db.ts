@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import path from "path";
-import { isUnknownSpecies } from "./species";
+import { isUnknownSpecies, toTitleCase } from "./species";
 
 interface ClipRow {
   id: number;
@@ -227,11 +227,6 @@ function findBusiestHour(isoTimestamps: string[]): string | null {
     return `${display} ${suffix}`;
   };
   return `${fmt(peakHour)} – ${fmt(peakHour + 1)}`;
-}
-
-/** Capitalizes each space-separated word: "black-capped chickadee" → "Black-capped Chickadee". */
-export function toTitleCase(name: string): string {
-  return name.replace(/(^|\s)(\S)/g, (_, space: string, ch: string) => space + ch.toUpperCase());
 }
 
 export function getDateSummary(clips: Clip[], audioIdentifications: AudioIdentification[] = []): DateSummary {

@@ -272,8 +272,8 @@ describe("ClipGrid video cards", () => {
     const c = within(card("video 1"));
 
     expect(c.getByRole("img")).toHaveAttribute("src", "/downloads/2026/7/4/1.jpg");
-    expect(c.getByRole("img")).toHaveAttribute("alt", "house finch");
-    expect(c.getByText("house finch (male) ×3")).toBeInTheDocument();
+    expect(c.getByRole("img")).toHaveAttribute("alt", "House Finch");
+    expect(c.getByText("House Finch (male) ×3")).toBeInTheDocument();
     expect(c.getByText("88% confidence")).toBeInTheDocument();
     expect(c.getByText("AI model: gemini-2.5-flash")).toBeInTheDocument();
   });
@@ -286,7 +286,7 @@ describe("ClipGrid video cards", () => {
     ["a count of 0", { count: 0 }],
   ])("shows only the species name for %s", (_, overrides) => {
     renderGrid({ clips: [clip(1, "2026-07-04T13:00:00Z", [ident({ species: "blue jay", ...overrides })])] });
-    expect(within(card("video 1")).getByText("blue jay")).toBeInTheDocument();
+    expect(within(card("video 1")).getByText("Blue Jay")).toBeInTheDocument();
   });
 
   it("omits the confidence line when confidence is null", () => {
@@ -305,9 +305,9 @@ describe("ClipGrid video cards", () => {
     });
     const c = within(card("video 1"));
 
-    expect(c.getByText("house finch")).toBeInTheDocument();
+    expect(c.getByText("House Finch")).toBeInTheDocument();
     expect(c.getByText("80% confidence")).toBeInTheDocument();
-    expect(c.getByText("blue jay")).toBeInTheDocument();
+    expect(c.getByText("Blue Jay")).toBeInTheDocument();
     expect(c.getByText("60% confidence")).toBeInTheDocument();
   });
 
@@ -413,7 +413,7 @@ describe("ClipGrid lightbox", () => {
     const img = within(screen.getByRole("dialog")).getByRole("img");
 
     expect(img).toHaveAttribute("src", "/downloads/2026/7/4/1.jpg");
-    expect(img).toHaveAttribute("alt", "house finch");
+    expect(img).toHaveAttribute("alt", "House Finch");
   });
 
   it("opens with the clicked audio species image", async () => {
