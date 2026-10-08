@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Clip, AudioIdentification } from "@/lib/db";
 import { isKnownSpecies, toTitleCase } from "@/lib/species";
+import { Lightbox, type LightboxImage } from "./lightbox";
 
 type FeedItem =
   | { type: "video"; timestamp: string; clip: Clip }
@@ -98,16 +99,7 @@ export function ClipGrid({
   const [showAudio, setShowAudio] = useState(true);
   const [includeNonBirds, setIncludeNonBirds] = useState(false);
   const [sortOrder, setSortOrder] = useState<SortOrder>("time");
-  const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
-
-  useEffect(() => {
-    if (!selectedImage) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSelectedImage(null);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedImage]);
+  const [selectedImage, setSelectedImage] = useState<LightboxImage | null>(null);
 
   const visibleClips = includeNonBirds ? clips : clips.filter(hasKnownBird);
   const visibleAudio = includeNonBirds
@@ -281,29 +273,7 @@ export function ClipGrid({
           )
         )}
       </div>
-      {selectedImage && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-          onClick={() => setSelectedImage(null)}
-        >
-          <button
-            type="button"
-            aria-label="Close"
-            onClick={() => setSelectedImage(null)}
-            className="absolute top-4 right-4 text-white text-3xl leading-none"
-          >
-            &times;
-          </button>
-          <img
-            src={selectedImage.src}
-            alt={selectedImage.alt}
-            className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      )}
+      <Lightbox image={selectedImage} onClose={() => setSelectedImage(null)} />
     </>
   );
 }

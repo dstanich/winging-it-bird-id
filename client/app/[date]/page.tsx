@@ -9,6 +9,7 @@ import {
 } from "@/lib/db";
 import type { DailyImage } from "@/lib/db";
 import { ClipGrid } from "./clip-grid";
+import { ZoomableImage } from "./lightbox";
 
 export function generateStaticParams() {
   return getAvailableDates().map((date) => ({ date }));
@@ -135,7 +136,7 @@ export default async function DatePage({
 }
 
 const placeholderClass =
-  "aspect-square w-full max-w-xs flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-400 dark:text-zinc-500";
+  "h-28 w-28 flex flex-col items-center justify-center gap-1.5 p-2 text-center rounded-lg border-2 border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-400 dark:text-zinc-500";
 
 function DailyImagePanel({ dailyImage }: { dailyImage: DailyImage | null }) {
   if (!dailyImage) {
@@ -149,12 +150,12 @@ function DailyImagePanel({ dailyImage }: { dailyImage: DailyImage | null }) {
           strokeWidth={1.5}
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="h-10 w-10"
+          className="h-7 w-7"
         >
           <circle cx="12" cy="12" r="9" />
           <path d="M12 7v5l3 2" />
         </svg>
-        <span className="text-sm font-semibold tracking-widest">PENDING</span>
+        <span className="text-xs font-semibold tracking-widest">PENDING</span>
       </div>
     );
   }
@@ -162,20 +163,20 @@ function DailyImagePanel({ dailyImage }: { dailyImage: DailyImage | null }) {
   if (!dailyImage.imagePath) {
     return (
       <div className={placeholderClass}>
-        <span className="text-sm font-medium">No birds identified</span>
+        <span className="text-xs font-medium">No birds identified</span>
       </div>
     );
   }
 
   const alt = `Cartoon illustration of ${dailyImage.species.join(", ")}`;
   return (
-    <a href={`/${dailyImage.imagePath}`} target="_blank" rel="noopener noreferrer" className="block max-w-xs">
-      <img
+    <div className="max-w-xs">
+      <ZoomableImage
         src={`/${dailyImage.imagePath}`}
         alt={alt}
         title={dailyImage.species.join(", ")}
-        className="aspect-square w-full rounded-lg object-cover border border-zinc-200 dark:border-zinc-800"
+        className="aspect-square w-full rounded-lg object-cover border border-zinc-200 dark:border-zinc-800 cursor-pointer"
       />
-    </a>
+    </div>
   );
 }
