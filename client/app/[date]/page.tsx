@@ -3,9 +3,11 @@ import {
   getClipsForDate,
   getAudioIdentificationsForDate,
   getDateSummary,
+  getDailyImage,
   formatDateHeading,
   formatClipTime,
 } from "@/lib/db";
+import type { DailyImage } from "@/lib/db";
 import { ClipGrid } from "./clip-grid";
 
 export function generateStaticParams() {
@@ -21,6 +23,7 @@ export default async function DatePage({
   const clips = getClipsForDate(date);
   const audioIdentifications = getAudioIdentificationsForDate(date);
   const summary = getDateSummary(clips, audioIdentifications);
+  const dailyImage = getDailyImage(date);
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 px-4 py-8">
@@ -38,7 +41,7 @@ export default async function DatePage({
         <h2 className="text-xl font-semibold mb-3 text-zinc-800 dark:text-zinc-200">
           Summary
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-6 mb-8">
           <div>
             <h3 className="text-sm font-semibold uppercase tracking-wide mb-2 text-zinc-500 dark:text-zinc-400">
               Video
@@ -106,6 +109,13 @@ export default async function DatePage({
               )}
             </div>
           </div>
+
+          <div>
+            <h3 className="text-sm font-semibold uppercase tracking-wide mb-2 text-zinc-500 dark:text-zinc-400">
+              Species of the Day
+            </h3>
+            <DailyImagePanel dailyImage={dailyImage} />
+          </div>
         </div>
 
         <h2 className="text-xl font-semibold mb-3 text-zinc-800 dark:text-zinc-200">
@@ -121,5 +131,51 @@ export default async function DatePage({
         />
       </main>
     </div>
+  );
+}
+
+const placeholderClass =
+  "aspect-square w-full max-w-xs flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-400 dark:text-zinc-500";
+
+function DailyImagePanel({ dailyImage }: { dailyImage: DailyImage | null }) {
+  if (!dailyImage) {
+    return (
+      <div className={placeholderClass}>
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="h-10 w-10"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+        <span className="text-sm font-semibold tracking-widest">PENDING</span>
+      </div>
+    );
+  }
+
+  if (!dailyImage.imagePath) {
+    return (
+      <div className={placeholderClass}>
+        <span className="text-sm font-medium">No birds identified</span>
+      </div>
+    );
+  }
+
+  const alt = `Cartoon illustration of ${dailyImage.species.join(", ")}`;
+  return (
+    <a href={`/${dailyImage.imagePath}`} target="_blank" rel="noopener noreferrer" className="block max-w-xs">
+      <img
+        src={`/${dailyImage.imagePath}`}
+        alt={alt}
+        title={dailyImage.species.join(", ")}
+        className="aspect-square w-full rounded-lg object-cover border border-zinc-200 dark:border-zinc-800"
+      />
+    </a>
   );
 }

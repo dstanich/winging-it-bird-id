@@ -150,4 +150,44 @@ export class Storage {
     pruneAudioIdentificationsBefore(cutoffIso) {
         return this.provider.pruneAudioIdentificationsBefore(cutoffIso);
     }
+
+    /**
+     * Returns the distinct bird species identified between two instants, from
+     * video identifications (is_bird only) and BirdNET-Go audio detections.
+     * Species names are returned as stored (video lowercase, audio mixed case);
+     * unknown/unidentified placeholders are not filtered out.
+     * @param {string} startIso - ISO 8601 start instant (inclusive).
+     * @param {string} endIso - ISO 8601 end instant (exclusive).
+     * @returns {{ video: string[], audio: string[] }}
+     */
+    getBirdSpeciesBetween(startIso, endIso) {
+        return this.provider.getBirdSpeciesBetween(startIso, endIso);
+    }
+
+    /**
+     * Looks up the AI-generated daily image row for a local date.
+     * @param {string} date - Local date as YYYY-MM-DD.
+     * @returns {Object|null} The daily_images row (species is a JSON string), or null if none yet.
+     */
+    getDailyImage(date) {
+        return this.provider.getDailyImage(date);
+    }
+
+    /**
+     * Records a daily image. A null local_path marks a completed day with no known bird species.
+     * @param {{ date: string, species: string[], local_path?: string|null, ai_model_id?: number|null, ai_prompt_id?: number|null }} image
+     * @returns {number} The new daily_images row ID.
+     */
+    addDailyImage(image) {
+        return this.provider.addDailyImage(image);
+    }
+
+    /**
+     * Deletes daily image rows for dates strictly before the cutoff date.
+     * @param {string} cutoffDate - Local date as YYYY-MM-DD.
+     * @returns {{ dailyImagesDeleted: number }}
+     */
+    pruneDailyImagesBefore(cutoffDate) {
+        return this.provider.pruneDailyImagesBefore(cutoffDate);
+    }
 }

@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { localDateString } from './daily-image.js';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -35,6 +36,13 @@ export async function pruneOldData(storage, downloadDir, retentionDays) {
     const { audioIdentificationsDeleted } = storage.pruneAudioIdentificationsBefore(cutoffIso);
     if (audioIdentificationsDeleted > 0) {
         console.log(`Pruned ${audioIdentificationsDeleted} audio identification(s) older than ${cutoffIso}`);
+    }
+
+    // Matches the day-directory pruning below: the cutoff day itself is kept.
+    const cutoffDate = localDateString(new Date(cutoffMs));
+    const { dailyImagesDeleted } = storage.pruneDailyImagesBefore(cutoffDate);
+    if (dailyImagesDeleted > 0) {
+        console.log(`Pruned ${dailyImagesDeleted} daily image(s) before ${cutoffDate}`);
     }
 
     if (!downloadDir || !fs.existsSync(downloadDir)) {

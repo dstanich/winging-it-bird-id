@@ -81,6 +81,15 @@ const SCHEMA = `
     species_image_id INTEGER REFERENCES species_images(id),
     created_at TEXT
   );
+  CREATE TABLE daily_images (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL UNIQUE,
+    species TEXT NOT NULL,
+    local_path TEXT,
+    ai_model_id INTEGER REFERENCES settings(id),
+    ai_prompt_id INTEGER REFERENCES settings(id),
+    created_at TEXT
+  );
 `;
 
 export interface ClipInput {
@@ -180,6 +189,13 @@ export function createTestDb(dir: string) {
             audio.audioPath ?? null,
             audio.speciesImageId ?? null
           ).lastInsertRowid
+      );
+    },
+    addDailyImage(date: string, species: string[], localPath: string | null): number {
+      return Number(
+        db
+          .prepare("INSERT INTO daily_images (date, species, local_path) VALUES (?, ?, ?)")
+          .run(date, JSON.stringify(species), localPath).lastInsertRowid
       );
     },
   };

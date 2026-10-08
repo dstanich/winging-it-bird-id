@@ -60,6 +60,19 @@ export interface AudioIdentification {
   speciesImagePath: string | null;
 }
 
+interface DailyImageRow {
+  date: string;
+  species: string;
+  local_path: string | null;
+}
+
+export interface DailyImage {
+  date: string;
+  /** Null when the day completed with no known bird species. */
+  imagePath: string | null;
+  species: string[];
+}
+
 const RETENTION_DAYS = parseInt(process.env.RETENTION_DAYS || "60", 10);
 const cutoffIso = new Date(Date.now() - RETENTION_DAYS * 1000 * 60 * 60 * 24).toISOString();
 
@@ -303,9 +316,38 @@ export function formatClipTime(isoString: string): string {
   });
 }
 
+/**
+ * The AI-generated species image for a date, or null if it hasn't been
+ * generated yet (the day isn't complete, or generation hasn't succeeded).
+ */
+export function getDailyImage(date: string): DailyImage | null {
+  if (date < toChicagoDate(cutoffIso)) return null;
+
+  const db = getDb();
+  // The server creates this table on startup; a DB it hasn't opened since then won't have it yet.
+  const hasTable = db
+    .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'daily_images'`)
+    .get();
+  const row = hasTable
+    ? (db
+        .prepare(`SELECT date, species, local_path FROM daily_images WHERE date = ?`)
+        .get(date) as DailyImageRow | undefined)
+    : undefined;
+  db.close();
+
+  if (!row) return null;
+  return {
+    date: row.date,
+    imagePath: row.local_path,
+    species: JSON.parse(row.species) as string[],
+  };
+}
+
 export interface ActiveSettings {
   aiModel: string | null;
   aiPrompt: string | null;
+  aiImageModel: string | null;
+  aiImagePrompt: string | null;
 }
 
 export function getActiveSettings(): ActiveSettings {
@@ -313,21 +355,22 @@ export function getActiveSettings(): ActiveSettings {
 
   const rows = db
     .prepare(
-      `SELECT name, value FROM settings WHERE is_active = 1 AND name IN ('ai_model', 'ai_prompt')`
+      `SELECT name, value FROM settings WHERE is_active = 1 AND name IN ('ai_model', 'ai_prompt', 'ai_image_model', 'ai_image_prompt')`
     )
     .all() as { name: string; value: string }[];
 
   db.close();
 
-  let aiModel: string | null = null;
-  let aiPrompt: string | null = null;
+  const settings: ActiveSettings = { aiModel: null, aiPrompt: null, aiImageModel: null, aiImagePrompt: null };
 
   for (const row of rows) {
-    if (row.name === "ai_model") aiModel = row.value;
-    if (row.name === "ai_prompt") aiPrompt = row.value;
+    if (row.name === "ai_model") settings.aiModel = row.value;
+    if (row.name === "ai_prompt") settings.aiPrompt = row.value;
+    if (row.name === "ai_image_model") settings.aiImageModel = row.value;
+    if (row.name === "ai_image_prompt") settings.aiImagePrompt = row.value;
   }
 
-  return { aiModel, aiPrompt };
+  return settings;
 }
 
 export function formatDateHeading(date: string): string {

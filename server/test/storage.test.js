@@ -41,6 +41,10 @@ describe('Storage facade', () => {
     getSpeciesImage: ['Turdus migratorius'],
     addSpeciesImage: [{ scientific_name: 'Turdus migratorius', local_path: 'p.jpg' }],
     pruneAudioIdentificationsBefore: ['2026-01-01T00:00:00.000Z'],
+    getBirdSpeciesBetween: ['2026-01-01T06:00:00.000Z', '2026-01-02T06:00:00.000Z'],
+    getDailyImage: ['2026-01-01'],
+    addDailyImage: [{ date: '2026-01-01', species: ['House Finch'], local_path: 'p.png' }],
+    pruneDailyImagesBefore: ['2026-01-01'],
   };
 
   it('has delegation test arguments for every facade method', () => {

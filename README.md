@@ -12,6 +12,8 @@ This repo is a mix of developer written and AI agent written code as a hobby pro
 
 Node.js application that runs a local FTP server for a camera to push recorded clips to on motion, extracts a thumbnail from each clip via ffmpeg, then identifies what bird(s) are in it using Google Gemini.
 
+Once a day is complete (7 AM local time the following day), the server also asks Gemini for a cartoon-style "species of the day" illustration of every known bird species seen on video or heard by BirdNET-Go that day. The date page shows it next to the summary, or a PENDING placeholder until it exists. `DAILY_IMAGE_LOOKBACK_DAYS` (default 7) caps how many past days are considered, and the image model/prompt are stored as `ai_image_model`/`ai_image_prompt` settings rows (default model `gemini-3.1-flash-lite-image`).
+
 Frontend written with Next.js intended to be built and exported as a static website with a built in scheduler to build the static files, upload to AWS S3, then invalidate cache.
 
 ## Example Deployed Instance
@@ -108,7 +110,7 @@ The root `docker-compose.yml` runs both the server (`server/Dockerfile`) and the
 | Follow logs | `docker compose logs -f server` (or `publish`) |
 | Stop everything | `docker compose down` (volumes and data are kept) |
 
-The FTP port mappings in `docker-compose.yml` (`2121`, `30100-30110`) are fixed; if you change `FTP_PORT` or `FTP_PASV_MIN`/`FTP_PASV_MAX`, update the compose file to match. Both containers set `TZ=America/Chicago` in the compose file; the server needs it to read the local-time timestamps in Reolink filenames correctly, so change it if your camera is in another time zone.
+The FTP port mappings in `docker-compose.yml` (`2121`, `30100-30110`) are fixed; if you change `FTP_PORT` or `FTP_PASV_MIN`/`FTP_PASV_MAX`, update the compose file to match. Both containers set `TZ=America/Chicago` in the compose file; the server needs it to read the local-time timestamps in Reolink filenames correctly (and to decide when a day is complete for its daily image), so change it if your camera is in another time zone.
 
 **Migrating from hand-run containers:** remove the old containers with `docker rm -f <name>` (no `-v`, so the named volumes are kept), then run `docker compose up -d --build`. They must be removed first because they hold the FTP ports.
 

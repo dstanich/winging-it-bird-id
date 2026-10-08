@@ -10,9 +10,10 @@ const makeTempDir = useTempDirs();
 const NOW = new Date(2026, 6, 15, 12, 0, 0);
 const RETENTION_DAYS = 10;
 
-const fakeStorage = ({ clipsDeleted = 0, identificationsDeleted = 0, audioIdentificationsDeleted = 0 } = {}) => ({
+const fakeStorage = ({ clipsDeleted = 0, identificationsDeleted = 0, audioIdentificationsDeleted = 0, dailyImagesDeleted = 0 } = {}) => ({
   pruneClipsBefore: vi.fn().mockReturnValue({ clipsDeleted, identificationsDeleted }),
   pruneAudioIdentificationsBefore: vi.fn().mockReturnValue({ audioIdentificationsDeleted }),
+  pruneDailyImagesBefore: vi.fn().mockReturnValue({ dailyImagesDeleted }),
 });
 
 /** Creates downloads/YYYY/M/D/ (non-padded) containing a file, for the given local date. */
@@ -47,13 +48,21 @@ describe('pruneOldData', () => {
     expect(storage.pruneAudioIdentificationsBefore).toHaveBeenCalledExactlyOnceWith(expectedCutoff);
   });
 
+  it('prunes daily images dated before the cutoff day, keeping the cutoff day', async () => {
+    const storage = fakeStorage();
+    await pruneOldData(storage, downloadDir, RETENTION_DAYS);
+    // NOW is 2026-07-15 local noon; 10 days earlier is 2026-07-05.
+    expect(storage.pruneDailyImagesBefore).toHaveBeenCalledExactlyOnceWith('2026-07-05');
+  });
+
   it('logs only when rows were actually pruned', async () => {
     await pruneOldData(fakeStorage(), downloadDir, RETENTION_DAYS);
     expect(console.log).not.toHaveBeenCalled();
 
-    await pruneOldData(fakeStorage({ clipsDeleted: 2, identificationsDeleted: 3, audioIdentificationsDeleted: 4 }), downloadDir, RETENTION_DAYS);
+    await pruneOldData(fakeStorage({ clipsDeleted: 2, identificationsDeleted: 3, audioIdentificationsDeleted: 4, dailyImagesDeleted: 5 }), downloadDir, RETENTION_DAYS);
     expect(console.log).toHaveBeenCalledWith(expect.stringMatching(/^Pruned 2 clip\(s\) and 3 identification\(s\)/));
     expect(console.log).toHaveBeenCalledWith(expect.stringMatching(/^Pruned 4 audio identification\(s\)/));
+    expect(console.log).toHaveBeenCalledWith('Pruned 5 daily image(s) before 2026-07-05');
   });
 
   it('removes day directories before the cutoff day and keeps the cutoff day onward', async () => {
@@ -149,5 +158,6 @@ describe('pruneOldData', () => {
     await pruneOldData(storage, path.join(downloadDir, 'does-not-exist'), RETENTION_DAYS);
     expect(storage.pruneClipsBefore).toHaveBeenCalledTimes(2);
     expect(storage.pruneAudioIdentificationsBefore).toHaveBeenCalledTimes(2);
+    expect(storage.pruneDailyImagesBefore).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
-import { DEFAULT_PROMPT, DEFAULT_MODEL } from './ai-provider.js';
+import { DEFAULT_PROMPT, DEFAULT_MODEL, DEFAULT_IMAGE_PROMPT, DEFAULT_IMAGE_MODEL } from './ai-provider.js';
 
 export class SQLiteStorage {
     constructor() {
@@ -83,6 +83,16 @@ export class SQLiteStorage {
 
             CREATE INDEX IF NOT EXISTS idx_audio_identifications_species ON audio_identifications(scientific_name);
             CREATE INDEX IF NOT EXISTS idx_audio_identifications_detected_at ON audio_identifications(detected_at);
+
+            CREATE TABLE IF NOT EXISTS daily_images (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL UNIQUE,
+                species TEXT NOT NULL,
+                local_path TEXT,
+                ai_model_id INTEGER REFERENCES settings(id),
+                ai_prompt_id INTEGER REFERENCES settings(id),
+                created_at TEXT
+            );
         `);
 
         this._seedDefaultSettings();
@@ -156,6 +166,14 @@ export class SQLiteStorage {
             {
                 name: 'ai_model',
                 value: DEFAULT_MODEL,
+            },
+            {
+                name: 'ai_image_prompt',
+                value: DEFAULT_IMAGE_PROMPT,
+            },
+            {
+                name: 'ai_image_model',
+                value: DEFAULT_IMAGE_MODEL,
             },
         ];
 
@@ -344,5 +362,46 @@ export class SQLiteStorage {
         // BirdNET-Go timestamps carry a UTC offset (e.g. -05:00), so compare instants, not strings.
         const result = this.db.prepare('DELETE FROM audio_identifications WHERE julianday(detected_at) < julianday(?)').run(cutoffIso);
         return { audioIdentificationsDeleted: result.changes };
+    }
+
+    getBirdSpeciesBetween(startIso, endIso) {
+        const video = this.db.prepare(`
+            SELECT DISTINCT i.species FROM identifications i
+            JOIN clips c ON c.id = i.clip_id
+            WHERE i.is_bird = 1 AND i.species IS NOT NULL AND c.created_at >= ? AND c.created_at < ?
+        `).all(startIso, endIso).map(r => r.species);
+        // BirdNET-Go timestamps carry a UTC offset (e.g. -05:00), so compare instants, not strings.
+        const audio = this.db.prepare(`
+            SELECT DISTINCT species FROM audio_identifications
+            WHERE species IS NOT NULL AND julianday(detected_at) >= julianday(?) AND julianday(detected_at) < julianday(?)
+        `).all(startIso, endIso).map(r => r.species);
+        return { video, audio };
+    }
+
+    getDailyImage(date) {
+        const row = this.db.prepare('SELECT * FROM daily_images WHERE date = ?').get(date);
+        return row || null;
+    }
+
+    addDailyImage({ date, species, local_path, ai_model_id, ai_prompt_id }) {
+        const insert = this.db.prepare(`
+            INSERT INTO daily_images (date, species, local_path, ai_model_id, ai_prompt_id, created_at)
+            VALUES (@date, @species, @local_path, @ai_model_id, @ai_prompt_id, @created_at)
+        `);
+        const result = insert.run({
+            date,
+            species: JSON.stringify(species),
+            local_path: local_path || null,
+            ai_model_id: ai_model_id ?? null,
+            ai_prompt_id: ai_prompt_id ?? null,
+            created_at: new Date().toISOString(),
+        });
+        return result.lastInsertRowid;
+    }
+
+    pruneDailyImagesBefore(cutoffDate) {
+        // date is YYYY-MM-DD, so string comparison orders correctly.
+        const result = this.db.prepare('DELETE FROM daily_images WHERE date < ?').run(cutoffDate);
+        return { dailyImagesDeleted: result.changes };
     }
 }

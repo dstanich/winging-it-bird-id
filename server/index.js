@@ -9,6 +9,7 @@ import { AIProvider } from './lib/ai-provider.js';
 import { BirdNetProvider } from './lib/birdnet-provider.js';
 import { pruneOldData } from './lib/retention.js';
 import { applyCooldown, processClips } from './lib/clip-processing.js';
+import { generateDailyImages } from './lib/daily-image.js';
 import * as fs from 'fs';
 import 'dotenv/config'
 
@@ -28,6 +29,7 @@ const BIRDNET_GO_URL = process.env.BIRDNET_GO_URL;
 const BIRDNET_MIN_CONFIDENCE = parseFloat(process.env.BIRDNET_MIN_CONFIDENCE || 0.7);
 const BIRDNET_LOOKBACK_HOURS = parseInt(process.env.BIRDNET_LOOKBACK_HOURS || 48);
 const VIDEO_COOLDOWN_SECONDS = parseInt(process.env.VIDEO_COOLDOWN_SECONDS || 0); // 0 = disabled
+const DAILY_IMAGE_LOOKBACK_DAYS = parseInt(process.env.DAILY_IMAGE_LOOKBACK_DAYS || 7);
 
 // Persistence / AI
 let storage;
@@ -116,6 +118,17 @@ async function checkAndProcessClips() {
       console.error(`Error removing processed video ${clip.localVideoPath}:`, error);
     }
   });
+
+  // Generate daily species images; generateDailyImages() works out which days are ready
+  try {
+    await generateDailyImages(storage, aiProvider, {
+      downloadDir: process.env.DOWNLOAD_DIR,
+      lookbackDays: DAILY_IMAGE_LOOKBACK_DAYS,
+      delayMs: process.env.PROCESS_DELAY || 30000,
+    });
+  } catch (error) {
+    console.error('Error generating daily images:', error);
+  }
 }
 
 /**

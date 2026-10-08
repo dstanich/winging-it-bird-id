@@ -13,7 +13,7 @@ const { generateContent, GoogleGenAI } = vi.hoisted(() => {
 
 vi.mock('@google/genai', () => ({ GoogleGenAI }));
 
-const { AIProvider, DEFAULT_MODEL, DEFAULT_PROMPT } = await import('../lib/ai-provider.js');
+const { AIProvider, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_PROMPT, DEFAULT_MODEL, DEFAULT_PROMPT } = await import('../lib/ai-provider.js');
 
 const makeTempDir = useTempDirs();
 
@@ -125,5 +125,63 @@ describe('AIProvider', () => {
     await expect(new AIProvider(fakeStorage()).identifyBird(clip, path.join(makeTempDir(), 'missing.jpg')))
       .rejects.toThrow(/ENOENT/);
     expect(generateContent).not.toHaveBeenCalled();
+  });
+});
+
+describe('AIProvider.generateImage', () => {
+  const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
+  const imageResponse = (mimeType = 'image/png') => ({
+    candidates: [{ content: { parts: [{ text: 'here you go' }, { inlineData: { mimeType, data: PNG_BYTES.toString('base64') } }] } }],
+  });
+
+  beforeEach(() => {
+    generateContent.mockReset();
+  });
+
+  it('fills {species} into the active image prompt and requests a square image from the active image model', async () => {
+    const storage = fakeStorage({
+      ai_image_prompt: { id: 31, value: 'draw {species} as cartoons ({species})' },
+      ai_image_model: { id: 32, value: 'gemini-image-custom' },
+    });
+    generateContent.mockResolvedValue(imageResponse());
+
+    const result = await new AIProvider(storage).generateImage('Blue Jay, House Finch');
+
+    expect(generateContent).toHaveBeenCalledExactlyOnceWith({
+      model: 'gemini-image-custom',
+      contents: [{ role: 'user', parts: [{ text: 'draw Blue Jay, House Finch as cartoons (Blue Jay, House Finch)' }] }],
+      config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: '1:1' } },
+    });
+    expect(result).toEqual({ data: PNG_BYTES, mimeType: 'image/png', ai_model_id: 32, ai_prompt_id: 31 });
+  });
+
+  it('falls back to the default image model and prompt when no settings are active', async () => {
+    generateContent.mockResolvedValue(imageResponse('image/jpeg'));
+
+    const result = await new AIProvider(fakeStorage()).generateImage('Blue Jay');
+
+    const [{ model, contents }] = generateContent.mock.calls[0];
+    expect(model).toBe(DEFAULT_IMAGE_MODEL);
+    expect(contents[0].parts[0].text).toBe(DEFAULT_IMAGE_PROMPT.replaceAll('{species}', 'Blue Jay'));
+    expect(result).toMatchObject({ mimeType: 'image/jpeg', ai_model_id: null, ai_prompt_id: null });
+  });
+
+  it('throws with the finish reason when no image part is returned', async () => {
+    generateContent.mockResolvedValue({ candidates: [{ finishReason: 'IMAGE_SAFETY', content: { parts: [{ text: 'sorry' }] } }] });
+
+    await expect(new AIProvider(fakeStorage()).generateImage('Blue Jay')).rejects.toThrow('Image generation returned no image (IMAGE_SAFETY)');
+  });
+
+  it('throws when the prompt is blocked and there are no candidates', async () => {
+    generateContent.mockResolvedValue({ promptFeedback: { blockReason: 'SAFETY' } });
+
+    await expect(new AIProvider(fakeStorage()).generateImage('Blue Jay')).rejects.toThrow('(SAFETY)');
+  });
+
+  it('rethrows API errors', async () => {
+    const apiError = new Error('429 rate limited');
+    generateContent.mockRejectedValue(apiError);
+
+    await expect(new AIProvider(fakeStorage()).generateImage('Blue Jay')).rejects.toBe(apiError);
   });
 });

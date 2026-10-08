@@ -334,15 +334,68 @@ describe("getActiveSettings", () => {
     testDb.addSetting("ai_prompt", "identify the birds", true);
     testDb.addSetting("something_else", "ignored", true);
 
+    testDb.addSetting("ai_image_model", "gemini-3.1-flash-lite-image", true);
+    testDb.addSetting("ai_image_prompt", "draw {species}", true);
+
     const { getActiveSettings } = await loadDb();
-    expect(getActiveSettings()).toEqual({ aiModel: "gemini-2.5-flash", aiPrompt: "identify the birds" });
+    expect(getActiveSettings()).toEqual({
+      aiModel: "gemini-2.5-flash",
+      aiPrompt: "identify the birds",
+      aiImageModel: "gemini-3.1-flash-lite-image",
+      aiImagePrompt: "draw {species}",
+    });
   });
 
   it("returns nulls when no active settings exist", async () => {
     testDb.addSetting("ai_model", "gemini-2.5-flash", false);
 
     const { getActiveSettings } = await loadDb();
-    expect(getActiveSettings()).toEqual({ aiModel: null, aiPrompt: null });
+    expect(getActiveSettings()).toEqual({ aiModel: null, aiPrompt: null, aiImageModel: null, aiImagePrompt: null });
+  });
+});
+
+describe("getDailyImage", () => {
+  it("returns null when no image has been generated for the date", async () => {
+    testDb.addDailyImage("2026-07-08", ["Blue Jay"], "downloads/2026/7/8/daily-2026-07-08.png");
+
+    const { getDailyImage } = await loadDb();
+    expect(getDailyImage("2026-07-09")).toBeNull();
+  });
+
+  it("returns the image path and parsed species list", async () => {
+    testDb.addDailyImage("2026-07-08", ["Blue Jay", "House Finch"], "downloads/2026/7/8/daily-2026-07-08.png");
+
+    const { getDailyImage } = await loadDb();
+    expect(getDailyImage("2026-07-08")).toEqual({
+      date: "2026-07-08",
+      imagePath: "downloads/2026/7/8/daily-2026-07-08.png",
+      species: ["Blue Jay", "House Finch"],
+    });
+  });
+
+  it("returns a null image path for a completed day with no known birds", async () => {
+    testDb.addDailyImage("2026-07-08", [], null);
+
+    const { getDailyImage } = await loadDb();
+    expect(getDailyImage("2026-07-08")).toEqual({ date: "2026-07-08", imagePath: null, species: [] });
+  });
+
+  it("excludes dates before the retention cutoff day", async () => {
+    vi.stubEnv("RETENTION_DAYS", "7");
+    // Cutoff is 2026-07-03T17:00:00Z, i.e. July 3 in Chicago.
+    testDb.addDailyImage("2026-07-02", ["Blue Jay"], "a.png");
+    testDb.addDailyImage("2026-07-03", ["Blue Jay"], "b.png");
+
+    const { getDailyImage } = await loadDb();
+    expect(getDailyImage("2026-07-02")).toBeNull();
+    expect(getDailyImage("2026-07-03")?.imagePath).toBe("b.png");
+  });
+
+  it("returns null when the database predates the daily_images table", async () => {
+    testDb.db.exec("DROP TABLE daily_images");
+
+    const { getDailyImage } = await loadDb();
+    expect(getDailyImage("2026-07-08")).toBeNull();
   });
 });
 

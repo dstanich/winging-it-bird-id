@@ -3,7 +3,7 @@ import * as path from 'path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SQLiteStorage } from '../lib/sqlite-storage.js';
-import { DEFAULT_MODEL, DEFAULT_PROMPT } from '../lib/ai-provider.js';
+import { DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_PROMPT, DEFAULT_MODEL, DEFAULT_PROMPT } from '../lib/ai-provider.js';
 import { useTempDirs } from './helpers.js';
 
 const makeTempDir = useTempDirs();
@@ -50,7 +50,7 @@ describe('SQLiteStorage', () => {
         .all()
         .map(r => r.name);
       expect(tables).toEqual(expect.arrayContaining([
-        'clips', 'identifications', 'settings', 'species_images', 'audio_identifications',
+        'clips', 'identifications', 'settings', 'species_images', 'audio_identifications', 'daily_images',
       ]));
     });
 
@@ -60,6 +60,14 @@ describe('SQLiteStorage', () => {
       expect(storage.getSetting('ai_model')).toBe(DEFAULT_MODEL);
       expect(storage.getSettings('ai_prompt')).toHaveLength(1);
       expect(storage.getSettings('ai_model')).toHaveLength(1);
+    });
+
+    it('seeds the default ai_image_prompt and ai_image_model as active settings', () => {
+      openStorage();
+      expect(storage.getSetting('ai_image_prompt')).toBe(DEFAULT_IMAGE_PROMPT);
+      expect(storage.getSetting('ai_image_model')).toBe(DEFAULT_IMAGE_MODEL);
+      expect(storage.getSettings('ai_image_prompt')).toHaveLength(1);
+      expect(storage.getSettings('ai_image_model')).toHaveLength(1);
     });
 
     it('does not re-seed settings when reopening an existing database', () => {
@@ -496,6 +504,99 @@ describe('SQLiteStorage', () => {
     it('addSpeciesImage rejects a duplicate scientific_name', () => {
       storage.addSpeciesImage({ scientific_name: 'Turdus migratorius', local_path: 'a.jpg' });
       expect(() => storage.addSpeciesImage({ scientific_name: 'Turdus migratorius', local_path: 'b.jpg' })).toThrow(/UNIQUE/);
+    });
+  });
+
+  describe('daily images', () => {
+    beforeEach(() => openStorage());
+
+    const dailyRows = () => storage.db.prepare('SELECT * FROM daily_images ORDER BY date').all();
+
+    it('getDailyImage returns null for a date without a row', () => {
+      expect(storage.getDailyImage('2026-07-04')).toBeNull();
+    });
+
+    it('addDailyImage stores the species as JSON and getDailyImage finds it', () => {
+      const model = storage.getSettingWithId('ai_image_model');
+      const prompt = storage.getSettingWithId('ai_image_prompt');
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'));
+      let id;
+      try {
+        id = storage.addDailyImage({
+          date: '2026-07-04',
+          species: ['House Finch', 'Northern Cardinal'],
+          local_path: 'downloads/2026/7/4/daily-2026-07-04.png',
+          ai_model_id: model.id,
+          ai_prompt_id: prompt.id,
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+      expect(storage.getDailyImage('2026-07-04')).toEqual({
+        id: Number(id),
+        date: '2026-07-04',
+        species: '["House Finch","Northern Cardinal"]',
+        local_path: 'downloads/2026/7/4/daily-2026-07-04.png',
+        ai_model_id: model.id,
+        ai_prompt_id: prompt.id,
+        created_at: '2026-07-05T12:00:00.000Z',
+      });
+    });
+
+    it('addDailyImage stores a no-birds day with NULL path and settings ids', () => {
+      storage.addDailyImage({ date: '2026-07-04', species: [] });
+      expect(storage.getDailyImage('2026-07-04')).toMatchObject({ species: '[]', local_path: null, ai_model_id: null, ai_prompt_id: null });
+    });
+
+    it('addDailyImage rejects a duplicate date', () => {
+      storage.addDailyImage({ date: '2026-07-04', species: [] });
+      expect(() => storage.addDailyImage({ date: '2026-07-04', species: [] })).toThrow(/UNIQUE/);
+    });
+
+    it('pruneDailyImagesBefore deletes rows dated strictly before the cutoff date', () => {
+      for (const date of ['2026-06-30', '2026-07-01', '2026-07-02']) {
+        storage.addDailyImage({ date, species: [] });
+      }
+      expect(storage.pruneDailyImagesBefore('2026-07-01')).toEqual({ dailyImagesDeleted: 1 });
+      expect(dailyRows().map(r => r.date)).toEqual(['2026-07-01', '2026-07-02']);
+    });
+
+    describe('getBirdSpeciesBetween', () => {
+      const START = '2026-07-04T05:00:00.000Z';
+      const END = '2026-07-05T05:00:00.000Z';
+
+      const addClip = (id, createdAt, identifications) =>
+        storage.addClip({ id, created_at: createdAt, birdIdentification: identifications });
+
+      const addAudio = (id, species, detectedAt) =>
+        storage.addAudioIdentification({ birdnet_detection_id: id, species, detected_at: detectedAt });
+
+      it('returns distinct bird species from clips and audio within [start, end)', () => {
+        addClip(1, '2026-07-04T05:00:00.000Z', [{ is_bird: true, species: 'house finch' }]);
+        addClip(2, '2026-07-04T15:00:00.000Z', [
+          { is_bird: true, species: 'house finch' },
+          { is_bird: true, species: 'blue jay' },
+        ]);
+        addClip(3, '2026-07-05T05:00:00.000Z', [{ is_bird: true, species: 'too late' }]);
+        addClip(4, '2026-07-04T04:59:59.000Z', [{ is_bird: true, species: 'too early' }]);
+        addAudio(1, 'American Robin', '2026-07-04T00:00:00-05:00'); // 05:00Z, inclusive start
+        addAudio(2, 'American Robin', '2026-07-04T10:00:00-05:00');
+        addAudio(3, 'Late Bird', '2026-07-05T00:00:00-05:00'); // 05:00Z, exclusive end
+
+        const result = storage.getBirdSpeciesBetween(START, END);
+        expect(result.video.sort()).toEqual(['blue jay', 'house finch']);
+        expect(result.audio).toEqual(['American Robin']);
+      });
+
+      it('excludes non-bird identifications and null species', () => {
+        addClip(1, '2026-07-04T15:00:00.000Z', [
+          { is_bird: false, non_bird_species: 'squirrel', species: 'squirrel' },
+          { is_bird: true, species: null },
+        ]);
+        addAudio(1, null, '2026-07-04T10:00:00-05:00');
+        expect(storage.getBirdSpeciesBetween(START, END)).toEqual({ video: [], audio: [] });
+      });
     });
   });
 });

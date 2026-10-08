@@ -22,6 +22,8 @@ export default function SettingsPage() {
         <div className="space-y-2 text-zinc-700 dark:text-zinc-300">
           <p><span className="font-medium">AI model:</span> {settings.aiModel ?? "Not set"}</p>
           <p><span className="font-medium">AI prompt:</span> {settings.aiPrompt ?? "Not set"}</p>
+          <p><span className="font-medium">Daily image model:</span> {settings.aiImageModel ?? "Not set"}</p>
+          <p><span className="font-medium">Daily image prompt:</span> {settings.aiImagePrompt ?? "Not set"}</p>
         </div>
       </main>
     </div>
