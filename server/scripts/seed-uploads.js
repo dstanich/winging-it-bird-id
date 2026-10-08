@@ -3,6 +3,9 @@
  * in ../test-birds/images, for local testing without the camera.
  *
  * Usage: npm run seed:uploads [-- <count>]   (default 5)
+ *
+ * <count> is the number of bird clips; a third as many non-bird clips (at
+ * least 1, from non*.jpg images) are added on top.
  */
 
 import 'dotenv/config';
@@ -23,14 +26,15 @@ if (!Number.isInteger(count) || count < 1) {
 }
 
 try {
-  await seedUploads({
+  const results = await seedUploads({
     imageDir: IMAGE_DIR,
     uploadDir: process.env.UPLOAD_DIR || './uploads',
     count,
     cameraName: process.env.CAMERA_NAME || 'Bird',
     cooldownSeconds: parseInt(process.env.VIDEO_COOLDOWN_SECONDS || 0),
   });
-  console.log(`✓ Seeded ${count} clip(s)`);
+  const nonBirds = results.filter(r => !r.isBird).length;
+  console.log(`✓ Seeded ${results.length} clip(s): ${results.length - nonBirds} bird, ${nonBirds} non-bird`);
 } catch (err) {
   console.error('Failed to seed uploads:', err.message);
   process.exit(1);

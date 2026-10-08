@@ -36,7 +36,7 @@ Alternatively, run via Docker: the `Dockerfile` exposes the FTP control port (`2
 
 #### Test clips without the camera
 
-`cd server && npm run seed:uploads` (or `npm run seed:uploads -- 12`) creates short videos in `UPLOAD_DIR` from random photos in `test-birds/images/` (default 5; no photo repeats until every one has been used). They are named like real Reolink uploads with recent timestamps spaced past `VIDEO_COOLDOWN_SECONDS`, so the next processing tick picks them up and sends them to Gemini like real clips.
+`cd server && npm run seed:uploads` (or `npm run seed:uploads -- 12`) creates short videos in `UPLOAD_DIR` from random photos in `test-birds/images/`: the requested number of bird clips (default 5) plus a third as many non-bird clips (at least 1) from photos whose names start with `non`. No photo repeats until every one in its group has been used. They are named like real Reolink uploads with recent timestamps spaced past `VIDEO_COOLDOWN_SECONDS`, so the next processing tick picks them up and sends them to Gemini like real clips.
 
 #### Tests
 

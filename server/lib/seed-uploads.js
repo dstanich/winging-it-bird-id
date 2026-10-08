@@ -13,6 +13,9 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 
 const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png']);
 
+// Non-bird photos (squirrels, empty feeder, ...) are told apart by filename, e.g. nonbird.jpg.
+const NON_BIRD_PATTERN = /^non/i;
+
 // Thumbnails are extracted at the 1-second mark, so videos must run past it.
 const VIDEO_DURATION_SECONDS = 3;
 
@@ -29,6 +32,24 @@ export function listImages(imageDir) {
     .filter(entry => entry.isFile() && IMAGE_EXTENSIONS.has(path.extname(entry.name).slice(1).toLowerCase()))
     .map(entry => path.join(imageDir, entry.name))
     .sort();
+}
+
+/**
+ * Whether an image is a non-bird photo, judged by its filename.
+ * @param {string} imagePath
+ * @returns {boolean}
+ */
+export function isNonBirdImage(imagePath) {
+  return NON_BIRD_PATTERN.test(path.basename(imagePath));
+}
+
+/**
+ * Number of non-bird clips to add alongside birdCount bird clips: a third, at least 1.
+ * @param {number} birdCount
+ * @returns {number}
+ */
+export function nonBirdCount(birdCount) {
+  return Math.max(1, Math.floor(birdCount / 3));
 }
 
 /**
@@ -127,33 +148,46 @@ export function imageToVideo(imagePath, outputPath) {
 }
 
 /**
- * Generate count videos in uploadDir from randomly chosen images in imageDir,
+ * Generate count bird videos plus nonBirdCount(count) non-bird videos in
+ * uploadDir from randomly chosen images in imageDir, shuffled together and
  * named [cameraName]_00_[YYYYMMDDHHMMSS].mp4 with recent, cooldown-safe timestamps.
+ * If imageDir has no non-bird images, only bird videos are generated.
  *
  * @param {object} options
  * @param {string} options.imageDir
  * @param {string} options.uploadDir
- * @param {number} options.count
+ * @param {number} options.count - Bird clips; non-bird clips are added on top.
  * @param {string} options.cameraName
  * @param {number} [options.cooldownSeconds]
  * @param {Date} [options.now]
  * @param {() => number} [options.random]
- * @returns {Promise<Array<{ imagePath: string, videoPath: string }>>}
+ * @returns {Promise<Array<{ imagePath: string, videoPath: string, isBird: boolean }>>} Oldest first.
  */
 export async function seedUploads({ imageDir, uploadDir, count, cameraName, cooldownSeconds = 0, now = new Date(), random = Math.random }) {
   const images = listImages(imageDir);
-  if (!images.length) throw new Error(`No images found in ${imageDir}`);
+  const birdImages = images.filter(image => !isNonBirdImage(image));
+  const nonBirdImages = images.filter(isNonBirdImage);
+  if (!birdImages.length) throw new Error(`No bird images found in ${imageDir}`);
+
+  const picks = pickRandom(birdImages, count, random).map(imagePath => ({ imagePath, isBird: true }));
+  if (nonBirdImages.length) {
+    picks.push(...pickRandom(nonBirdImages, nonBirdCount(count), random).map(imagePath => ({ imagePath, isBird: false })));
+  } else {
+    console.warn(`No non-bird images (non*.jpg) found in ${imageDir}; seeding bird clips only`);
+  }
+  // A single full-pool round of pickRandom is a shuffle: mixes non-birds into the timeline.
+  const clips = pickRandom(picks, picks.length, random);
 
   fs.mkdirSync(uploadDir, { recursive: true });
-  const picks = pickRandom(images, count, random);
-  const timestamps = clipTimestamps(count, now, clipSpacingSeconds(cooldownSeconds));
+  const timestamps = clipTimestamps(clips.length, now, clipSpacingSeconds(cooldownSeconds));
 
   const results = [];
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < clips.length; i++) {
+    const { imagePath, isBird } = clips[i];
     const videoPath = path.join(uploadDir, `${cameraName}_00_${reolinkTimestamp(timestamps[i])}.mp4`);
-    await imageToVideo(picks[i], videoPath);
-    console.log(`✓ ${path.basename(picks[i])} → ${videoPath}`);
-    results.push({ imagePath: picks[i], videoPath });
+    await imageToVideo(imagePath, videoPath);
+    console.log(`✓ ${path.basename(imagePath)}${isBird ? '' : ' (non-bird)'} → ${videoPath}`);
+    results.push({ imagePath, videoPath, isBird });
   }
   return results;
 }

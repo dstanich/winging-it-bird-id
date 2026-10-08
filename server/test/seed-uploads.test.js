@@ -4,7 +4,7 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import ffmpegPath from 'ffmpeg-static';
 import {
-  listImages, pickRandom, clipSpacingSeconds, clipTimestamps, reolinkTimestamp, seedUploads,
+  listImages, isNonBirdImage, nonBirdCount, pickRandom, clipSpacingSeconds, clipTimestamps, reolinkTimestamp, seedUploads,
 } from '../lib/seed-uploads.js';
 import { discoverNewClips } from '../lib/ftp-clips.js';
 import { useTempDirs } from './helpers.js';
@@ -29,6 +29,21 @@ describe('listImages', () => {
     fs.mkdirSync(path.join(dir, 'nested.jpg'));
 
     expect(listImages(dir).map(p => path.basename(p))).toEqual(['a.JPEG', 'b.jpg', 'c.png']);
+  });
+});
+
+describe('isNonBirdImage', () => {
+  it('matches filenames starting with "non"', () => {
+    expect(isNonBirdImage('/x/nonbird.jpg')).toBe(true);
+    expect(isNonBirdImage('/x/NoneBird2.JPG')).toBe(true);
+    expect(isNonBirdImage('/x/cardinal.jpg')).toBe(false);
+    expect(isNonBirdImage('/nonbird/cardinal.jpg')).toBe(false);
+  });
+});
+
+describe('nonBirdCount', () => {
+  it('is a third of the bird count, rounded down, at least 1', () => {
+    expect([1, 2, 3, 5, 6, 12, 13].map(nonBirdCount)).toEqual([1, 1, 1, 1, 2, 4, 4]);
   });
 });
 
@@ -86,33 +101,64 @@ describe('reolinkTimestamp', () => {
 });
 
 describe('seedUploads', () => {
+  const now = new Date(2026, 9, 7, 8, 30, 0);
+
   it('writes Reolink-named videos that clip discovery accepts', async () => {
     const imageDir = tempDir();
     const uploadDir = path.join(tempDir(), 'uploads');
     const downloadDir = tempDir();
     writeImage(imageDir, 'cardinal.jpg');
     writeImage(imageDir, 'bluejay.jpg');
-    const now = new Date(2026, 9, 7, 8, 30, 0);
+    writeImage(imageDir, 'nonbird.jpg');
 
     const results = await seedUploads({ imageDir, uploadDir, count: 2, cameraName: 'Feeder', now });
 
     expect(fs.readdirSync(uploadDir).sort()).toEqual([
+      'Feeder_00_20261007082000.mp4',
       'Feeder_00_20261007082500.mp4',
       'Feeder_00_20261007083000.mp4',
     ]);
-    expect(new Set(results.map(r => path.basename(r.imagePath)))).toEqual(new Set(['cardinal.jpg', 'bluejay.jpg']));
+    expect(new Set(results.map(r => path.basename(r.imagePath)))).toEqual(new Set(['cardinal.jpg', 'bluejay.jpg', 'nonbird.jpg']));
 
     const storage = { data: () => ({}) };
     const clips = await discoverNewClips(storage, uploadDir, downloadDir, 'Bird');
-    expect(clips).toHaveLength(2);
+    expect(clips).toHaveLength(3);
     for (const clip of clips) {
       expect(clip.device_name).toBe('Feeder');
       expect(fs.existsSync(clip.localThumbnailPath)).toBe(true);
     }
   });
 
-  it('throws when the image dir has no images', async () => {
-    await expect(seedUploads({ imageDir: tempDir(), uploadDir: tempDir(), count: 1, cameraName: 'Feeder' }))
-      .rejects.toThrow(/No images/);
+  it('adds a third as many non-bird clips on top of count, never mixing the pools', async () => {
+    const imageDir = tempDir();
+    const uploadDir = tempDir();
+    for (const name of ['cardinal.jpg', 'bluejay.jpg', 'nonbird.jpg', 'nonebird2.jpg']) writeImage(imageDir, name);
+
+    const results = await seedUploads({ imageDir, uploadDir, count: 6, cameraName: 'Feeder', now });
+
+    expect(results).toHaveLength(8);
+    const birds = results.filter(r => r.isBird).map(r => path.basename(r.imagePath));
+    const nonBirds = results.filter(r => !r.isBird).map(r => path.basename(r.imagePath));
+    expect(birds).toHaveLength(6);
+    expect(birds.every(name => !name.startsWith('non'))).toBe(true);
+    expect(nonBirds.sort()).toEqual(['nonbird.jpg', 'nonebird2.jpg']);
+    expect(fs.readdirSync(uploadDir)).toHaveLength(8);
+  });
+
+  it('seeds bird clips only, with a warning, when there are no non-bird images', async () => {
+    const imageDir = tempDir();
+    writeImage(imageDir, 'cardinal.jpg');
+
+    const results = await seedUploads({ imageDir, uploadDir: tempDir(), count: 2, cameraName: 'Feeder', now });
+
+    expect(results.map(r => r.isBird)).toEqual([true, true]);
+    expect(console.warn).toHaveBeenCalledWith(expect.stringMatching(/No non-bird images/));
+  });
+
+  it('throws when the image dir has no bird images', async () => {
+    const imageDir = tempDir();
+    writeImage(imageDir, 'nonbird.jpg');
+    await expect(seedUploads({ imageDir, uploadDir: tempDir(), count: 1, cameraName: 'Feeder' }))
+      .rejects.toThrow(/No bird images/);
   });
 });

@@ -50,7 +50,7 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   ├── scripts/scheduled-publish/ # S3 deploy script (own package.json): build + upload + CloudFront invalidation, every 5h
 │   ├── .env.example
 │   └── Dockerfile                 # Container for scheduled S3 publishing
-├── test-birds/                    # Committed test media from the real feeder: images/ (bird photos for seed:uploads), audio/ (wav clips)
+├── test-birds/                    # Committed test media from the real feeder: images/ (bird photos + non*.jpg non-bird photos for seed:uploads), audio/ (wav clips)
 ├── .claude/
 │   ├── settings.json              # Shared Claude Code permissions (npm lint/build/install/ci + read-only git/sqlite allowed; .env reads denied)
 │   └── launch.json                # Claude Code preview config: client dev server on :3000
@@ -73,7 +73,7 @@ There is no root-level `package.json` — `server/`, `client/`, and `client/scri
 ```bash
 npm start                  # node index.js: starts the FTP listener, runs an initial check, then loops every CHECK_INTERVAL
 npm test                   # vitest run: the server test suite (npm run test:watch for watch mode)
-npm run seed:uploads       # Put 5 test clips in UPLOAD_DIR (`-- <n>` for more); see "Test clips" below
+npm run seed:uploads       # Put 5 bird + 1 non-bird test clips in UPLOAD_DIR (`-- <n>` for n bird clips); see "Test clips" below
 ```
 
 ### Client (`cd client`)
@@ -95,7 +95,7 @@ The server and client each have a Vitest suite (`server/test/`, `client/test/`);
 
 ### Test clips (no camera)
 
-`npm run seed:uploads [-- <count>]` (`scripts/seed-uploads.js` → `lib/seed-uploads.js`) picks `count` (default 5) random photos from `test-birds/images/` — no repeats until every photo has been used, then reshuffled rounds — and encodes each as a 3-second still MP4 named `[CAMERA_NAME]_00_[YYYYMMDDHHMMSS].mp4` in `UPLOAD_DIR`. Timestamps end at "now" and step back by `max(300, VIDEO_COOLDOWN_SECONDS + 60)` seconds so the cooldown keeps them all. Files are written as `*.partial` and renamed, so a running server never sees half-written videos. The next tick processes them for real (Gemini calls included).
+`npm run seed:uploads [-- <count>]` (`scripts/seed-uploads.js` → `lib/seed-uploads.js`) picks `count` (default 5) random bird photos from `test-birds/images/` plus `max(1, floor(count / 3))` non-bird photos (filenames starting with `non`, e.g. `nonbird.jpg`; extra on top of `count`, skipped with a warning if none exist), shuffles them together, and encodes each as a 3-second still MP4 named `[CAMERA_NAME]_00_[YYYYMMDDHHMMSS].mp4` in `UPLOAD_DIR`. Within each pool, no photo repeats until every one has been used, then rounds are reshuffled. Timestamps end at "now" and step back by `max(300, VIDEO_COOLDOWN_SECONDS + 60)` seconds so the cooldown keeps them all. Files are written as `*.partial` and renamed, so a running server never sees half-written videos. The next tick processes them for real (Gemini calls included).
 
 ### Server tests
 
