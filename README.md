@@ -34,6 +34,10 @@ The server is a Node.js application that runs a local FTP server for the camera 
 
 Alternatively, run via Docker: the `Dockerfile` exposes the FTP control port (`2121`) and passive port range (`30100-30110`), with volumes for `data/` and `downloads/`.
 
+#### Test clips without the camera
+
+`cd server && npm run seed:uploads` (or `npm run seed:uploads -- 12`) creates short videos in `UPLOAD_DIR` from random photos in `test-birds/images/` (default 5; no photo repeats until every one has been used). They are named like real Reolink uploads with recent timestamps spaced past `VIDEO_COOLDOWN_SECONDS`, so the next processing tick picks them up and sends them to Gemini like real clips.
+
 #### Tests
 
 `cd server && npm test` runs the [Vitest](https://vitest.dev) suite in `server/test/` (`npm run test:watch` for watch mode). Tests use temp directories and stubbed network/AI calls, so they need no `.env`, never touch `server/data/`, and never call Gemini or BirdNET-Go. Thumbnail tests run the real bundled ffmpeg binary.

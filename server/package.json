@@ -11,6 +11,7 @@
   },
   "scripts": {
     "start": "node index.js",
+    "seed:uploads": "node scripts/seed-uploads.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },

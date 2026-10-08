@@ -17,9 +17,11 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   │   ├── clip-processing.js     # applyCooldown() filter + processClips() AI pass, used by the main loop
 │   │   ├── ftp-listener.js        # FTP server (ftp-srv) the camera pushes clips to
 │   │   ├── ftp-clips.js           # Scans uploads, parses filenames, extracts thumbnails (ffmpeg)
+│   │   ├── seed-uploads.js        # Local testing: turns test-birds/images photos into Reolink-named videos in UPLOAD_DIR
 │   │   ├── retention.js           # Prunes clips/identifications/audio identifications/download dirs older than RETENTION_DAYS
 │   │   ├── storage.js             # Storage facade (JSDoc'd interface)
 │   │   └── sqlite-storage.js      # SQLite implementation: schema, seeding, migrations, queries
+│   ├── scripts/seed-uploads.js    # CLI for lib/seed-uploads.js (npm run seed:uploads)
 │   ├── test/                      # Vitest suite: one *.test.js per lib/ module, plus setup.js + helpers.js
 │   ├── vitest.config.js
 │   ├── data/bird-data.db          # SQLite database (git-ignored)
@@ -48,6 +50,7 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   ├── scripts/scheduled-publish/ # S3 deploy script (own package.json): build + upload + CloudFront invalidation, every 5h
 │   ├── .env.example
 │   └── Dockerfile                 # Container for scheduled S3 publishing
+├── test-birds/                    # Committed test media from the real feeder: images/ (bird photos for seed:uploads), audio/ (wav clips)
 ├── .claude/
 │   ├── settings.json              # Shared Claude Code permissions (npm lint/build/install/ci + read-only git/sqlite allowed; .env reads denied)
 │   └── launch.json                # Claude Code preview config: client dev server on :3000
@@ -70,6 +73,7 @@ There is no root-level `package.json` — `server/`, `client/`, and `client/scri
 ```bash
 npm start                  # node index.js: starts the FTP listener, runs an initial check, then loops every CHECK_INTERVAL
 npm test                   # vitest run: the server test suite (npm run test:watch for watch mode)
+npm run seed:uploads       # Put 5 test clips in UPLOAD_DIR (`-- <n>` for more); see "Test clips" below
 ```
 
 ### Client (`cd client`)
@@ -89,6 +93,10 @@ npm start                  # Build + publish immediately, then repeat every 5 ho
 
 The server and client each have a Vitest suite (`server/test/`, `client/test/`); the publish script has no tests, and the server has no linter. Verify server changes with `npm test` (add/update tests alongside behavior changes) and, for loop/FTP wiring in `index.js`, by running `npm start` against a scratch `DATA_DIR`; verify client changes with `npm test`, `npm run lint`, and `npm run build` (add/update tests alongside changes to `lib/` or `clip-grid.tsx`).
 
+### Test clips (no camera)
+
+`npm run seed:uploads [-- <count>]` (`scripts/seed-uploads.js` → `lib/seed-uploads.js`) picks `count` (default 5) random photos from `test-birds/images/` — no repeats until every photo has been used, then reshuffled rounds — and encodes each as a 3-second still MP4 named `[CAMERA_NAME]_00_[YYYYMMDDHHMMSS].mp4` in `UPLOAD_DIR`. Timestamps end at "now" and step back by `max(300, VIDEO_COOLDOWN_SECONDS + 60)` seconds so the cooldown keeps them all. Files are written as `*.partial` and renamed, so a running server never sees half-written videos. The next tick processes them for real (Gemini calls included).
+
 ### Server tests
 
 - **Vitest 4** (not 5: Vitest 5 requires Node 22+, and the server Docker image is `node:20`). Config in `server/vitest.config.js`; `restoreMocks`, `unstubEnvs`, and `unstubGlobals` are on, so `vi.spyOn`/`vi.stubEnv`/`vi.stubGlobal` reset between tests.
@@ -97,6 +105,7 @@ The server and client each have a Vitest suite (`server/test/`, `client/test/`);
 - Tests never touch real data or services: SQLite tests point `DATA_DIR` at a temp dir via `vi.stubEnv`; `@google/genai` and `ftp-srv` are replaced with `vi.mock`; BirdNET-Go is a stubbed global `fetch` router. `ftp-clips` tests generate a real 2-second video with the bundled `ffmpeg-static` binary and extract real thumbnails.
 - Time-dependent tests use `vi.useFakeTimers({ toFake: ['Date'] })` + `vi.setSystemTime()`; time-zone tests use `vi.stubEnv('TZ', ...)` (Node picks up `TZ` changes at runtime).
 - `test/storage.test.js` fails if a `Storage` facade method is missing from `SQLiteStorage` or from its delegation-args table, enforcing the "add to both" rule below.
+- `seed-uploads` tests encode tiny ffmpeg-generated JPEGs and run the output through `discoverNewClips()` to confirm the filenames and videos are accepted.
 - `index.js` itself is not unit-tested (it starts the FTP server on import); keep testable logic in `lib/` modules.
 
 ### Client tests
@@ -161,7 +170,7 @@ When adding an env var, update the relevant `.env.example`, the README, and this
 
 ## Key Conventions
 
-- Server is plain JavaScript ES modules (`"type": "module"`), JSDoc for documentation, 2-space indent in `index.js`/`lib/ftp-*.js`/`birdnet-provider.js`/`clip-processing.js`/`test/` and 4-space in `storage.js`/`sqlite-storage.js`/`ai-provider.js`/`retention.js` — match the file you're editing.
+- Server is plain JavaScript ES modules (`"type": "module"`), JSDoc for documentation, 2-space indent in `index.js`/`lib/ftp-*.js`/`birdnet-provider.js`/`clip-processing.js`/`seed-uploads.js`/`scripts/`/`test/` and 4-space in `storage.js`/`sqlite-storage.js`/`ai-provider.js`/`retention.js` — match the file you're editing.
 - Uses the `fileURLToPath` pattern for a `__dirname` equivalent in ES module code.
 - Server logs to stdout with `console.log`/`console.error`; `✓` prefixes successful steps.
 - Camera pushes clips via FTP; no camera polling or cloud auth.

@@ -20,6 +20,9 @@ node_modules/
 downloads/
 !downloads/.gitkeep
 
+# FTP uploads (camera clips / seed:uploads output, deleted once processed)
+uploads/
+
 # Data
 data/
 !data/.gitkeep
