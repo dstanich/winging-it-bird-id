@@ -108,7 +108,7 @@ The root `docker-compose.yml` runs both the server (`server/Dockerfile`) and the
 | Follow logs | `docker compose logs -f server` (or `publish`) |
 | Stop everything | `docker compose down` (volumes and data are kept) |
 
-The FTP port mappings in `docker-compose.yml` (`2121`, `30100-30110`) are fixed; if you change `FTP_PORT` or `FTP_PASV_MIN`/`FTP_PASV_MAX`, update the compose file to match. Volumes are mounted with `:z` for SELinux hosts, which is harmless elsewhere.
+The FTP port mappings in `docker-compose.yml` (`2121`, `30100-30110`) are fixed; if you change `FTP_PORT` or `FTP_PASV_MIN`/`FTP_PASV_MAX`, update the compose file to match. Both containers set `TZ=America/Chicago` in the compose file; the server needs it to read the local-time timestamps in Reolink filenames correctly, so change it if your camera is in another time zone.
 
 **Migrating from hand-run containers:** remove the old containers with `docker rm -f <name>` (no `-v`, so the named volumes are kept), then run `docker compose up -d --build`. They must be removed first because they hold the FTP ports.
 

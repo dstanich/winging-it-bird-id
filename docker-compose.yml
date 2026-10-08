@@ -7,28 +7,32 @@
 # Env comes from server/.env and client/.env at runtime (never baked into the images).
 # Volumes are external so compose never creates or deletes them; create them once with
 #   docker volume create birdid-data && docker volume create birdid-downloads && docker volume create birdid-uploads
-# `:z` relabels the volumes for SELinux hosts (harmless elsewhere).
+# TZ must be the camera's time zone: Reolink filenames carry local timestamps, which the server parses as clip IDs.
 
 services:
   server:
     build: ./server
     env_file: ./server/.env
+    environment:
+      TZ: America/Chicago
     ports:
       - "2121:2121" # FTP control; must match FTP_PORT
       - "30100-30110:30100-30110" # FTP passive range; must match FTP_PASV_MIN/FTP_PASV_MAX
     volumes:
-      - birdid-data:/app/data:z
-      - birdid-downloads:/app/downloads:z
-      - birdid-uploads:/app/uploads:z # failed clips wait here to be retried, so keep them across recreates
+      - birdid-data:/app/data
+      - birdid-downloads:/app/downloads
+      - birdid-uploads:/app/uploads # failed clips wait here to be retried, so keep them across recreates
     restart: unless-stopped
 
   publish:
     build: ./client
     env_file: ./client/.env
+    environment:
+      TZ: America/Chicago # pages hard-code America/Chicago; this just keeps log times consistent
     volumes:
       # Read-write: SQLite in WAL mode needs to write its -shm file even for read-only connections
-      - birdid-data:/app/data:z
-      - birdid-downloads:/app/public/downloads:z
+      - birdid-data:/app/data
+      - birdid-downloads:/app/public/downloads
     restart: unless-stopped
 
 volumes:
