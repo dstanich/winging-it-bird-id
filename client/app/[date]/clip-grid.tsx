@@ -2,10 +2,45 @@
 
 import { useEffect, useState } from "react";
 import type { Clip, AudioIdentification } from "@/lib/db";
+import { isKnownSpecies } from "@/lib/species";
 
 type FeedItem =
   | { type: "video"; timestamp: string; clip: Clip }
   | { type: "audio"; timestamp: string; audio: AudioIdentification };
+
+/** A clip is worth showing by default only if the AI named at least one bird species. */
+function hasKnownBird(clip: Clip): boolean {
+  return clip.identifications.some((ident) => ident.isBird && isKnownSpecies(ident.species));
+}
+
+function ToggleChip({ label, pressed, onToggle }: { label: string; pressed: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onToggle}
+      className={`inline-flex items-center gap-1.5 pl-2.5 pr-3 py-1 rounded-full text-sm border transition-colors ${
+        pressed
+          ? "bg-blue-600 border-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:border-blue-500 dark:hover:bg-blue-600"
+          : "bg-transparent border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-500"
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`flex h-4 w-4 items-center justify-center rounded-full border ${
+          pressed ? "border-white bg-white text-blue-600" : "border-zinc-400 dark:border-zinc-500"
+        }`}
+      >
+        {pressed && (
+          <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <path d="M3.5 8.5l3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </span>
+      {label}
+    </button>
+  );
+}
 
 export function ClipGrid({
   clips,
@@ -20,6 +55,7 @@ export function ClipGrid({
 }) {
   const [showVideo, setShowVideo] = useState(true);
   const [showAudio, setShowAudio] = useState(true);
+  const [includeNonBirds, setIncludeNonBirds] = useState(false);
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
 
   useEffect(() => {
@@ -31,47 +67,51 @@ export function ClipGrid({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [selectedImage]);
 
+  const visibleClips = includeNonBirds ? clips : clips.filter(hasKnownBird);
+  const visibleAudio = includeNonBirds
+    ? audioIdentifications
+    : audioIdentifications.filter((audio) => isKnownSpecies(audio.species));
+  const hiddenCount =
+    (showVideo ? clips.length - visibleClips.length : 0) +
+    (showAudio ? audioIdentifications.length - visibleAudio.length : 0);
+
   const items: FeedItem[] = [
     ...(showVideo
-      ? clips.map((clip): FeedItem => ({ type: "video", timestamp: clip.createdAt, clip }))
+      ? visibleClips.map((clip): FeedItem => ({ type: "video", timestamp: clip.createdAt, clip }))
       : []),
     ...(showAudio
-      ? audioIdentifications.map((audio): FeedItem => ({ type: "audio", timestamp: audio.detectedAt, audio }))
+      ? visibleAudio.map((audio): FeedItem => ({ type: "audio", timestamp: audio.detectedAt, audio }))
       : []),
   ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-4 mb-4">
-        <div className="flex gap-2">
-          <button
-            type="button"
-            aria-pressed={showVideo}
-            onClick={() => setShowVideo((v) => !v)}
-            className={`px-3 py-1 rounded-full text-sm border ${
-              showVideo
-                ? "bg-blue-600 border-blue-600 text-white"
-                : "bg-transparent border-zinc-300 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400"
-            }`}
-          >
-            Video
-          </button>
-          <button
-            type="button"
-            aria-pressed={showAudio}
-            onClick={() => setShowAudio((v) => !v)}
-            className={`px-3 py-1 rounded-full text-sm border ${
-              showAudio
-                ? "bg-blue-600 border-blue-600 text-white"
-                : "bg-transparent border-zinc-300 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400"
-            }`}
-          >
-            Audio
-          </button>
+      <div className="mb-4 space-y-3">
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Detection types to show">
+          <span className="text-sm text-zinc-500 dark:text-zinc-400 mr-1">Show:</span>
+          <ToggleChip label="Video" pressed={showVideo} onToggle={() => setShowVideo((v) => !v)} />
+          <ToggleChip label="Audio" pressed={showAudio} onToggle={() => setShowAudio((v) => !v)} />
         </div>
+        <label className="inline-flex items-center gap-2 cursor-pointer select-none text-sm text-zinc-700 dark:text-zinc-300">
+          <input
+            type="checkbox"
+            checked={includeNonBirds}
+            onChange={(e) => setIncludeNonBirds(e.target.checked)}
+            className="h-4 w-4 rounded border-zinc-300 dark:border-zinc-600 accent-blue-600 dark:accent-blue-500 cursor-pointer"
+          />
+          Include non-birds &amp; unidentified birds
+        </label>
       </div>
       <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
-        {items.length} {items.length === 1 ? "item" : "items"}
+        <span>
+          {items.length} {items.length === 1 ? "item" : "items"}
+        </span>
+        {hiddenCount > 0 && (
+          <span>
+            {" "}
+            · {hiddenCount} without an identified bird hidden
+          </span>
+        )}
       </p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {items.map((item) =>

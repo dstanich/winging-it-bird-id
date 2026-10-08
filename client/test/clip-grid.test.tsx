@@ -51,6 +51,11 @@ function card(timeLabel: string): HTMLElement {
   return screen.getByText(timeLabel).closest(".rounded-lg") as HTMLElement;
 }
 
+/** Ticks the "Include non-birds" checkbox so unidentified/non-bird items render. */
+async function includeNonBirds() {
+  await userEvent.setup().click(screen.getByRole("checkbox", { name: /include non-birds/i }));
+}
+
 /** Time labels of every rendered card, in feed order. */
 function feedOrder(): string[] {
   return screen.queryAllByText(/^(video|audio) /).map((el) => el.textContent!);
@@ -124,6 +129,67 @@ describe("ClipGrid toggles", () => {
   });
 });
 
+describe("ClipGrid non-bird filter", () => {
+  const data = {
+    clips: [
+      clip(1, "2026-07-04T11:00:00Z", [ident({ species: "house finch" })]),
+      clip(2, "2026-07-04T12:00:00Z", [ident({ isBird: false, species: null, nonBirdSpecies: "squirrel" })]),
+      clip(3, "2026-07-04T13:00:00Z", [ident({ species: "unknown bird" })]),
+      clip(4, "2026-07-04T14:00:00Z", []),
+      clip(5, "2026-07-04T15:00:00Z", [ident({ species: null })]),
+      // A known bird alongside a non-bird still counts as a bird clip.
+      clip(6, "2026-07-04T16:00:00Z", [
+        ident({ isBird: false, species: null, nonBirdSpecies: "squirrel" }),
+        ident({ species: "blue jay" }),
+      ]),
+    ],
+    audioIdentifications: [
+      audio(1, "2026-07-04T11:30:00Z"),
+      audio(2, "2026-07-04T12:30:00Z", { species: null }),
+      audio(3, "2026-07-04T13:30:00Z", { species: "Unidentified Sparrow" }),
+    ],
+  };
+
+  it("is unchecked by default", () => {
+    renderGrid(data);
+    expect(screen.getByRole("checkbox", { name: /include non-birds/i })).not.toBeChecked();
+  });
+
+  it("shows only items with an identified bird species by default", () => {
+    renderGrid(data);
+    expect(feedOrder()).toEqual(["video 6", "audio 1", "video 1"]);
+    expect(screen.getByText("3 items")).toBeInTheDocument();
+    expect(screen.getByText(/6 without an identified bird hidden/)).toBeInTheDocument();
+  });
+
+  it("shows everything when checked, and filters again when unchecked", async () => {
+    const user = userEvent.setup();
+    renderGrid(data);
+    const checkbox = screen.getByRole("checkbox", { name: /include non-birds/i });
+
+    await user.click(checkbox);
+    expect(checkbox).toBeChecked();
+    expect(feedOrder()).toHaveLength(9);
+    expect(screen.queryByText(/hidden/)).not.toBeInTheDocument();
+
+    await user.click(checkbox);
+    expect(feedOrder()).toEqual(["video 6", "audio 1", "video 1"]);
+  });
+
+  it("only counts hidden items for the media types being shown", async () => {
+    const user = userEvent.setup();
+    renderGrid(data);
+
+    await user.click(screen.getByRole("button", { name: "Video" }));
+    expect(screen.getByText(/2 without an identified bird hidden/)).toBeInTheDocument();
+  });
+
+  it("omits the hidden note when nothing is hidden", () => {
+    renderGrid({ clips: [clip(1, "2026-07-04T13:00:00Z")] });
+    expect(screen.queryByText(/hidden/)).not.toBeInTheDocument();
+  });
+});
+
 describe("ClipGrid video cards", () => {
   it("shows the time, thumbnail, identification details, and model", () => {
     renderGrid({
@@ -175,27 +241,30 @@ describe("ClipGrid video cards", () => {
     expect(c.getByText("60% confidence")).toBeInTheDocument();
   });
 
-  it("shows non-bird identifications by label in red", () => {
+  it("shows non-bird identifications by label in red", async () => {
     renderGrid({
       clips: [
         clip(1, "2026-07-04T13:00:00Z", [ident({ isBird: false, species: null, nonBirdSpecies: "squirrel", confidence: 0.7 })]),
       ],
     });
+    await includeNonBirds();
     const c = within(card("video 1"));
 
     expect(c.getByText("squirrel").parentElement).toHaveClass("text-red-500");
     expect(c.getByText("70% confidence")).toBeInTheDocument();
   });
 
-  it("falls back to 'Not a bird' when the non-bird label is missing", () => {
+  it("falls back to 'Not a bird' when the non-bird label is missing", async () => {
     renderGrid({
       clips: [clip(1, "2026-07-04T13:00:00Z", [ident({ isBird: false, species: null, nonBirdSpecies: null })])],
     });
+    await includeNonBirds();
     expect(within(card("video 1")).getByText("Not a bird")).toBeInTheDocument();
   });
 
-  it("shows a placeholder for a clip with no identifications", () => {
+  it("shows a placeholder for a clip with no identifications", async () => {
     renderGrid({ clips: [clip(1, "2026-07-04T13:00:00Z", [])] });
+    await includeNonBirds();
     const c = within(card("video 1"));
 
     expect(c.getByText("No identification")).toBeInTheDocument();
@@ -233,8 +302,9 @@ describe("ClipGrid audio cards", () => {
     expect(c.getByText("🐦")).toBeInTheDocument();
   });
 
-  it("falls back to 'Unidentified species' when the species is missing", () => {
+  it("falls back to 'Unidentified species' when the species is missing", async () => {
     renderGrid({ audioIdentifications: [audio(7, "2026-07-04T13:00:00Z", { species: null })] });
+    await includeNonBirds();
     const c = within(card("audio 7"));
 
     expect(c.getByText("Unidentified species")).toBeInTheDocument();

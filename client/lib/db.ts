@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import path from "path";
+import { isUnknownSpecies } from "./species";
 
 interface ClipRow {
   id: number;
@@ -226,11 +227,6 @@ function findBusiestHour(isoTimestamps: string[]): string | null {
     return `${display} ${suffix}`;
   };
   return `${fmt(peakHour)} – ${fmt(peakHour + 1)}`;
-}
-
-/** Species names the AI uses when it can't identify the bird, e.g. "unknown" or "unknown bird". */
-function isUnknownSpecies(species: string): boolean {
-  return /\b(unknown|unidentified)\b/i.test(species);
 }
 
 /** Capitalizes each space-separated word: "black-capped chickadee" → "Black-capped Chickadee". */
