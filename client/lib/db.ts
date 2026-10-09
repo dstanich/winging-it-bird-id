@@ -81,22 +81,50 @@ function getDb() {
   return new Database(dbPath, { readonly: true });
 }
 
+// Formatters are built once and reused: toLocale*String() constructs a new Intl
+// formatter on every call, which dominated build time once every row was bucketed.
+// en-CA is used only for its YYYY-MM-DD output (en-US gives M/D/YYYY), safe for URL paths and string comparison.
+const chicagoDateFormat = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" });
+const humanDateFormat = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/Chicago",
+  weekday: "long",
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+});
+const hourFormat = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", hour12: false });
+const clipTimeFormat = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/Chicago",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
 function toChicagoDate(isoString: string): string {
-  // en-CA locale produces YYYY-MM-DD format, safe for use in URL paths
-  return new Date(isoString).toLocaleDateString("en-CA", {
-    timeZone: "America/Chicago",
-  });
+  return chicagoDateFormat.format(new Date(isoString));
 }
 
 function toHumanDate(isoString: string): string {
-  return new Date(isoString).toLocaleDateString("en-US", {
-    timeZone: "America/Chicago",
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  return humanDateFormat.format(new Date(isoString));
 }
+
+/** Groups rows by Chicago date, preserving their order within each date. */
+function groupByChicagoDate<T>(rows: T[], timestamp: (row: T) => string): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const row of rows) {
+    const date = toChicagoDate(timestamp(row));
+    const group = groups.get(date);
+    if (group) group.push(row);
+    else groups.set(date, [row]);
+  }
+  return groups;
+}
+
+// Every page and date card asks for one date's rows, so the whole retention window is
+// loaded and bucketed once per build worker instead of once per call. Not cached under
+// `next dev`, so the dev server picks up new data without a restart.
+const cacheRows = process.env.NODE_ENV !== "development";
+let clipsByDate: Map<string, Clip[]> | undefined;
+let audioByDate: Map<string, AudioIdentification[]> | undefined;
 
 function buildClips(rows: ClipRow[]): Clip[] {
   const clipMap = new Map<number, Clip>();
@@ -148,7 +176,7 @@ export function getAvailableDates(): string[] {
   return [...seen].sort((a, b) => (a < b ? 1 : -1));
 }
 
-export function getClipsForDate(date: string): Clip[] {
+function loadClipsByDate(): Map<string, Clip[]> {
   const db = getDb();
 
   const rows = db
@@ -166,11 +194,20 @@ export function getClipsForDate(date: string): Clip[] {
 
   db.close();
 
-  const filtered = rows.filter((r) => toChicagoDate(r.created_at) === date);
-  return buildClips(filtered);
+  const byDate = new Map<string, Clip[]>();
+  for (const [date, dateRows] of groupByChicagoDate(rows, (r) => r.created_at)) {
+    byDate.set(date, buildClips(dateRows));
+  }
+  return byDate;
 }
 
-export function getAudioIdentificationsForDate(date: string): AudioIdentification[] {
+export function getClipsForDate(date: string): Clip[] {
+  const byDate = (cacheRows && clipsByDate) || loadClipsByDate();
+  if (cacheRows) clipsByDate = byDate;
+  return byDate.get(date) ?? [];
+}
+
+function loadAudioByDate(): Map<string, AudioIdentification[]> {
   const db = getDb();
 
   const rows = db
@@ -186,17 +223,22 @@ export function getAudioIdentificationsForDate(date: string): AudioIdentificatio
 
   db.close();
 
-  return rows
-    .filter((r) => toChicagoDate(r.detected_at) === date)
-    .map((r) => ({
-      id: r.id,
-      detectedAt: r.detected_at,
-      species: r.species,
-      scientificName: r.scientific_name,
-      confidence: r.confidence,
-      audioPath: r.local_audio_path,
-      speciesImagePath: r.species_image_path,
-    }));
+  const identifications = rows.map((r) => ({
+    id: r.id,
+    detectedAt: r.detected_at,
+    species: r.species,
+    scientificName: r.scientific_name,
+    confidence: r.confidence,
+    audioPath: r.local_audio_path,
+    speciesImagePath: r.species_image_path,
+  }));
+  return groupByChicagoDate(identifications, (a) => a.detectedAt);
+}
+
+export function getAudioIdentificationsForDate(date: string): AudioIdentification[] {
+  const byDate = (cacheRows && audioByDate) || loadAudioByDate();
+  if (cacheRows) audioByDate = byDate;
+  return byDate.get(date) ?? [];
 }
 
 export interface DateSummary {
@@ -221,14 +263,7 @@ function findBusiestHour(isoTimestamps: string[]): string | null {
 
   const hourCounts = new Map<number, number>();
   for (const iso of isoTimestamps) {
-    const hour = parseInt(
-      new Date(iso).toLocaleTimeString("en-US", {
-        timeZone: "America/Chicago",
-        hour: "numeric",
-        hour12: false,
-      }),
-      10
-    );
+    const hour = parseInt(hourFormat.format(new Date(iso)), 10);
     hourCounts.set(hour, (hourCounts.get(hour) ?? 0) + 1);
   }
   const maxCount = Math.max(...hourCounts.values());
@@ -309,11 +344,7 @@ export function getDateSummary(clips: Clip[], audioIdentifications: AudioIdentif
 }
 
 export function formatClipTime(isoString: string): string {
-  return new Date(isoString).toLocaleTimeString("en-US", {
-    timeZone: "America/Chicago",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return clipTimeFormat.format(new Date(isoString));
 }
 
 /**
