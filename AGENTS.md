@@ -32,7 +32,7 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   └── Dockerfile
 ├── client/                        # Next.js static frontend
 │   ├── app/
-│   │   ├── layout.tsx             # Root layout (Geist fonts, favicons, optional Cloudflare Analytics)
+│   │   ├── layout.tsx             # Root layout (Geist fonts, favicons, page background, SiteHeader on every page, optional Cloudflare Analytics)
 │   │   ├── page.tsx               # Home: intro (feeder photo in a LightboxLink modal), date cards for the 8 most recent dates, link to /all-dates
 │   │   ├── all-dates/page.tsx     # Date cards for every available date
 │   │   ├── settings/page.tsx      # Two cards: active identification model/prompt and daily image model/prompt
@@ -41,6 +41,7 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   │       └── clip-grid.tsx      # Client component: merged video/audio feed, video/audio toggles, non-bird filter, time/species sort, image lightbox
 │   ├── components/                # Shared across routes
 │   │   ├── lightbox.tsx           # Client components: Lightbox image modal (portaled to <body>) + ZoomableImage (image that opens itself) + LightboxLink (inline link-styled text that opens an image)
+│   │   ├── site-header.tsx        # Server component: sticky site-wide header bar (logo + title → home, GitHub icon), rendered by layout.tsx
 │   │   ├── date-card-grid.tsx     # Server component: responsive date cards (daily image or placeholder + clip/species/song stats), used by / and /all-dates
 │   │   └── daily-image-placeholder.tsx  # Dashed PENDING / "No birds identified" placeholder; caller sets the size
 │   ├── lib/
@@ -149,6 +150,7 @@ The server and client each have a Vitest suite (`server/test/`, `client/test/`);
 - **Static export** — `next.config.ts` sets `output: "export"`, `trailingSlash: true`, and `outputFileTracingRoot` to the repo root so the `client/data` symlink resolves. All pages are server components rendered at build time; `[date]` uses `generateStaticParams()` from `getAvailableDates()`.
 - **Routes:** `/` (intro + date cards for the 8 most recent dates), `/all-dates/` (date cards for every date), `/[date]/` (summary + combined feed), `/settings/` (identification model/prompt and daily image model/prompt, as two cards).
 - **Date cards** (`client/components/date-card-grid.tsx`) — `DateCardGrid` renders a responsive grid (1 / 2 / 4 columns) under a single note that the images are AI-generated representations of each day's visitors and that the real camera images and audio clips are on each date's page. Each card is one link to the date page: the daily image (square, not zoomable here) or a full-width square `DailyImagePlaceholder` (PENDING / "No birds identified"), then the date heading and clips / species seen (video) / songs heard (audio) from `getDateSummary()`. Data is loaded per card at build time with the same queries the date pages use.
+- **Site header** (`client/components/site-header.tsx`) — rendered once in the root layout, so every page gets it; pages don't render their own logo/title bar. Full-width sticky bar (`z-40`, below the lightbox's `z-50`) with a translucent blurred white/zinc-900 background, bottom border, and shadow; inner content aligned to the pages' `max-w-6xl`. The logo + "Winging-It Bird ID" title link to `/`; the GitHub mark opens the repo in a new tab. Sub pages (`/[date]/`, `/all-dates/`, `/settings/`) keep their own "← Home" link at the top of the page content. The layout's `<body>` sets `min-h-screen` and the zinc-50/zinc-950 page background, so page wrappers only add padding.
 - **Home intro** — "Reolink camera" and "(MakerWorld model)" open external pages in a new tab; "3D printed bird feeder" is a `LightboxLink` that opens `/images/feeder-20260704.jpg` in the lightbox modal.
 - **Daily image column** — the date page's summary is a 3-column grid (stacks on mobile): Video, Audio, and "Species of the Day". The third shows the day's `daily_images` image (a `ZoomableImage` that opens the full-size file in the same lightbox modal the feed uses), "No birds identified" for a row with a NULL path, or a dashed placeholder with a clock icon and PENDING when there's no row yet. Both placeholders (`DailyImagePlaceholder`) are a small fixed square (`h-28 w-28`) here so they don't make the summary taller than the stat columns.
 - **Internal links** — use `pageHref()` from `client/lib/links.ts` for links between pages: it emits `/path/index.html` in production (S3 has no directory-index rewriting) and `/path/` in dev.

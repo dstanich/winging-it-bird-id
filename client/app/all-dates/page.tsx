@@ -5,7 +5,7 @@ export default function AllDatesPage() {
   const dates = getAvailableDates();
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 px-4 py-8">
+    <div className="px-4 py-8">
       <main className="max-w-6xl mx-auto">
         <a
           href="/"
