@@ -1,5 +1,5 @@
-import { getAvailableDates, formatDateHeading } from "@/lib/db";
-import { pageHref } from "@/lib/links";
+import { getAvailableDates } from "@/lib/db";
+import { DateCardGrid } from "@/components/date-card-grid";
 
 export default function AllDatesPage() {
   const dates = getAvailableDates();
@@ -16,18 +16,7 @@ export default function AllDatesPage() {
         <h1 className="text-3xl font-bold mt-2 mb-6 text-zinc-900 dark:text-zinc-100">
           All Dates
         </h1>
-        <ul className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {dates.map((date) => (
-            <li key={date}>
-              <a
-                href={pageHref(`/${date}`)}
-                className="text-lg text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                {formatDateHeading(date)}
-              </a>
-            </li>
-          ))}
-        </ul>
+        <DateCardGrid dates={dates} />
       </main>
     </div>
   );

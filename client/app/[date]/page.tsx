@@ -9,7 +9,8 @@ import {
 } from "@/lib/db";
 import type { DailyImage } from "@/lib/db";
 import { ClipGrid } from "./clip-grid";
-import { ZoomableImage } from "./lightbox";
+import { ZoomableImage } from "@/components/lightbox";
+import { DailyImagePlaceholder } from "@/components/daily-image-placeholder";
 
 export function generateStaticParams() {
   return getAvailableDates().map((date) => ({ date }));
@@ -135,38 +136,10 @@ export default async function DatePage({
   );
 }
 
-const placeholderClass =
-  "h-28 w-28 flex flex-col items-center justify-center gap-1.5 p-2 text-center rounded-lg border-2 border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-400 dark:text-zinc-500";
-
 function DailyImagePanel({ dailyImage }: { dailyImage: DailyImage | null }) {
-  if (!dailyImage) {
-    return (
-      <div className={placeholderClass}>
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={1.5}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="h-7 w-7"
-        >
-          <circle cx="12" cy="12" r="9" />
-          <path d="M12 7v5l3 2" />
-        </svg>
-        <span className="text-xs font-semibold tracking-widest">PENDING</span>
-      </div>
-    );
-  }
-
-  if (!dailyImage.imagePath) {
-    return (
-      <div className={placeholderClass}>
-        <span className="text-xs font-medium">No birds identified</span>
-      </div>
-    );
-  }
+  // Small fixed square so the placeholder doesn't make the summary taller than the stat columns.
+  if (!dailyImage) return <DailyImagePlaceholder status="pending" className="h-28 w-28" />;
+  if (!dailyImage.imagePath) return <DailyImagePlaceholder status="no-birds" className="h-28 w-28" />;
 
   const alt = `Cartoon illustration of ${dailyImage.species.join(", ")}`;
   return (

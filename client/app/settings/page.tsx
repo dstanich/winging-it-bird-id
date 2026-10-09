@@ -16,16 +16,47 @@ export default function SettingsPage() {
           Current AI Settings
         </h1>
 
-        <h2 className="text-xl font-semibold mb-3 text-zinc-800 dark:text-zinc-200">
-          AI Configuration
-        </h2>
-        <div className="space-y-2 text-zinc-700 dark:text-zinc-300">
-          <p><span className="font-medium">AI model:</span> {settings.aiModel ?? "Not set"}</p>
-          <p><span className="font-medium">AI prompt:</span> {settings.aiPrompt ?? "Not set"}</p>
-          <p><span className="font-medium">Daily image model:</span> {settings.aiImageModel ?? "Not set"}</p>
-          <p><span className="font-medium">Daily image prompt:</span> {settings.aiImagePrompt ?? "Not set"}</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <SettingsCard
+            title="Bird Identification"
+            description="Identifies the birds in each camera clip."
+            rows={[
+              ["Identification model", settings.aiModel],
+              ["Identification prompt", settings.aiPrompt],
+            ]}
+          />
+          <SettingsCard
+            title="Species of the Day Image"
+            description="Generates an illustration of each completed day's birds."
+            rows={[
+              ["Daily image model", settings.aiImageModel],
+              ["Daily image prompt", settings.aiImagePrompt],
+            ]}
+          />
         </div>
       </main>
     </div>
+  );
+}
+
+function SettingsCard({
+  title,
+  description,
+  rows,
+}: {
+  title: string;
+  description: string;
+  rows: [label: string, value: string | null][];
+}) {
+  return (
+    <section className="rounded-lg bg-white dark:bg-zinc-900 shadow-sm p-4">
+      <h2 className="text-xl font-semibold text-zinc-800 dark:text-zinc-200">{title}</h2>
+      <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">{description}</p>
+      <div className="space-y-2 text-zinc-700 dark:text-zinc-300">
+        {rows.map(([label, value]) => (
+          <p key={label}><span className="font-medium">{label}:</span> {value ?? "Not set"}</p>
+        ))}
+      </div>
+    </section>
   );
 }

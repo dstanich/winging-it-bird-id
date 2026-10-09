@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 export interface LightboxImage {
   src: string;
   alt: string;
 }
 
-/** Full-screen image modal; closes via backdrop click, the × button, or Escape. */
+/**
+ * Full-screen image modal; closes via backdrop click, the × button, or Escape.
+ * Portaled to <body> so it can be triggered from inline content (e.g. inside a <p>).
+ */
 export function Lightbox({ image, onClose }: { image: LightboxImage | null; onClose: () => void }) {
   useEffect(() => {
     if (!image) return;
@@ -20,7 +24,7 @@ export function Lightbox({ image, onClose }: { image: LightboxImage | null; onCl
 
   if (!image) return null;
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -41,7 +45,8 @@ export function Lightbox({ image, onClose }: { image: LightboxImage | null; onCl
         className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
         onClick={(e) => e.stopPropagation()}
       />
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -51,6 +56,24 @@ export function ZoomableImage({ src, alt, title, className }: LightboxImage & { 
   return (
     <>
       <img src={src} alt={alt} title={title} className={className} onClick={() => setOpen(true)} />
+      <Lightbox image={open ? { src, alt } : null} onClose={() => setOpen(false)} />
+    </>
+  );
+}
+
+/** Inline link-styled text that opens an image in a Lightbox when clicked. */
+export function LightboxLink({
+  src,
+  alt,
+  className,
+  children,
+}: LightboxImage & { className?: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" className={className} onClick={() => setOpen(true)}>
+        {children}
+      </button>
       <Lightbox image={open ? { src, alt } : null} onClose={() => setOpen(false)} />
     </>
   );

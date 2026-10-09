@@ -2,7 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import { ZoomableImage } from "@/app/[date]/lightbox";
+import { LightboxLink, ZoomableImage } from "@/components/lightbox";
 
 afterEach(cleanup);
 
@@ -47,6 +47,26 @@ describe("ZoomableImage", () => {
 
   it("closes on Escape", async () => {
     const user = await openLightbox();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("LightboxLink", () => {
+  it("renders its text as a button with no image or dialog initially", () => {
+    render(<LightboxLink src="/images/feeder.jpg" alt="Feeder">3D printed bird feeder</LightboxLink>);
+    expect(screen.getByRole("button", { name: "3D printed bird feeder" })).toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("opens the image in a lightbox when clicked, and closes on Escape", async () => {
+    const user = userEvent.setup();
+    render(<LightboxLink src="/images/feeder.jpg" alt="Feeder">3D printed bird feeder</LightboxLink>);
+    await user.click(screen.getByRole("button", { name: "3D printed bird feeder" }));
+    const img = within(screen.getByRole("dialog")).getByRole("img");
+    expect(img).toHaveAttribute("src", "/images/feeder.jpg");
+    expect(img).toHaveAttribute("alt", "Feeder");
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });

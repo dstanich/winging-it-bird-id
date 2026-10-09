@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { Clip, AudioIdentification } from "@/lib/db";
 import { isKnownSpecies, toTitleCase } from "@/lib/species";
-import { Lightbox, type LightboxImage } from "./lightbox";
+import { Lightbox, type LightboxImage } from "@/components/lightbox";
 
 type FeedItem =
   | { type: "video"; timestamp: string; clip: Clip }
