@@ -4,27 +4,30 @@ This file provides guidance to AI agents such as Claude Code and GitHub Copilot 
 
 ## Project Overview
 
-Hobby project that runs a local FTP server for a Reolink camera (pointed at a bird feeder) to push recorded clips to, identifies bird species in each clip using Google Gemini AI, and logs results. Once each day is complete it generates an AI "species of the day" image of that day's birds. It also optionally syncs audio-based species detections from a self-hosted BirdNET-Go instance, independent of the video clips. A Next.js frontend is statically exported and published to S3/CloudFront (live at https://winging-it.org). Monorepo with a Node.js backend (`server/`) and a Next.js frontend (`client/`).
+Hobby project that runs a local FTP server for a Reolink camera (pointed at a bird feeder) to push recorded clips to, identifies bird species in each clip using Google Gemini AI, and logs results. Once each day is complete it generates an AI "species of the day" image of that day's birds. It also optionally syncs audio-based species detections from a self-hosted BirdNET-Go instance, independent of the video clips. A Next.js frontend is statically exported and published to S3/CloudFront (live at https://winging-it.org). Monorepo with a TypeScript Node.js backend (`server/`) and a Next.js frontend (`client/`).
 
 ## Repository Structure
 
 ```
 ├── server/                        # Node.js orchestration + local FTP ingestion
-│   ├── index.js                   # Main entry point: starts FTP listener + periodic processing loop
+│   ├── index.ts                   # Main entry point: starts FTP listener + periodic processing loop
 │   ├── lib/
-│   │   ├── ai-provider.js         # Gemini AI integration (identification + image generation); exports DEFAULT_PROMPT / DEFAULT_MODEL / DEFAULT_IMAGE_PROMPT / DEFAULT_IMAGE_MODEL
-│   │   ├── birdnet-provider.js    # BirdNET-Go audio detection sync (optional, independent of clips)
-│   │   ├── clip-processing.js     # applyCooldown() filter + processClips() AI pass, used by the main loop
-│   │   ├── daily-image.js         # generateDailyImages(): per-day AI species illustration once a day is complete
-│   │   ├── ftp-listener.js        # FTP server (ftp-srv) the camera pushes clips to
-│   │   ├── ftp-clips.js           # Scans uploads, parses filenames, extracts thumbnails (ffmpeg)
-│   │   ├── seed-uploads.js        # Local testing: turns test-birds/images photos into Reolink-named videos in UPLOAD_DIR
-│   │   ├── retention.js           # Prunes clips/identifications/audio identifications/daily images/download dirs older than RETENTION_DAYS
-│   │   ├── storage.js             # Storage facade (JSDoc'd interface)
-│   │   └── sqlite-storage.js      # SQLite implementation: schema, seeding, migrations, queries
-│   ├── scripts/seed-uploads.js    # CLI for lib/seed-uploads.js (npm run seed:uploads)
-│   ├── test/                      # Vitest suite: one *.test.js per lib/ module, plus setup.js + helpers.js
-│   ├── vitest.config.js
+│   │   ├── ai-provider.ts         # Gemini AI integration (identification + image generation); exports DEFAULT_PROMPT / DEFAULT_MODEL / DEFAULT_IMAGE_PROMPT / DEFAULT_IMAGE_MODEL
+│   │   ├── birdnet-provider.ts    # BirdNET-Go audio detection sync (optional, independent of clips)
+│   │   ├── clip-processing.ts     # applyCooldown() filter + processClips() AI pass, used by the main loop
+│   │   ├── daily-image.ts         # generateDailyImages(): per-day AI species illustration once a day is complete
+│   │   ├── ftp-listener.ts        # FTP server (ftp-srv) the camera pushes clips to
+│   │   ├── ftp-clips.ts           # Scans uploads, parses filenames, extracts thumbnails (ffmpeg)
+│   │   ├── ffmpeg-path.ts         # FFMPEG_PATH: the ffmpeg-static binary path, typed as a string (works around its mismatched types)
+│   │   ├── seed-uploads.ts        # Local testing: turns test-birds/images photos into Reolink-named videos in UPLOAD_DIR
+│   │   ├── retention.ts           # Prunes clips/identifications/audio identifications/daily images/download dirs older than RETENTION_DAYS
+│   │   ├── storage.ts             # Storage facade, implements StorageProvider
+│   │   ├── sqlite-storage.ts      # SQLite implementation (implements StorageProvider): schema, seeding, migrations, queries
+│   │   └── types.ts               # Shared types: DB row shapes, Clip/DiscoveredClip, BirdIdentification, StorageProvider interface
+│   ├── scripts/seed-uploads.ts    # CLI for lib/seed-uploads.ts (npm run seed:uploads)
+│   ├── test/                      # Vitest suite: one *.test.ts per lib/ module, plus setup.ts + helpers.ts
+│   ├── vitest.config.ts
+│   ├── tsconfig.json              # Type-check only (noEmit, erasableSyntaxOnly); Node runs the .ts files directly
 │   ├── data/bird-data.db          # SQLite database (git-ignored)
 │   ├── uploads/                   # Raw video files pushed by the camera via FTP (deleted after processing)
 │   ├── downloads/                 # Thumbnails: YYYY/M/D/{clip-id}.jpg; audio clips: YYYY/M/D/audio-{detection-id}.wav; daily images: YYYY/M/D/daily-YYYY-MM-DD.png; species clipart cache: species/{scientific-name-slug}.jpg
@@ -62,7 +65,7 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   ├── settings.json              # Shared Claude Code permissions (npm lint/build/install/ci + read-only git/sqlite allowed; .env reads denied)
 │   └── launch.json                # Claude Code preview config: client dev server on :3000
 ├── docker-compose.yml             # Production deploy: server + publish containers, external named volumes, env from server/.env + client/.env
-├── .nvmrc                         # lts/krypton (Node 24) for local dev; Docker images use node:20
+├── .nvmrc                         # lts/krypton (Node 24) for local dev; server image uses node:24-slim, client image node:20
 ├── README.md                      # Human-facing setup docs (keep in sync with this file)
 ├── CLAUDE.md                      # Just `@./AGENTS.md`
 └── AGENTS.md
@@ -79,8 +82,9 @@ There is no root-level `package.json` — `server/`, `client/`, and `client/scri
 ### Server (`cd server`)
 
 ```bash
-npm start                  # node index.js: starts the FTP listener, runs an initial check, then loops every CHECK_INTERVAL
+npm start                  # node index.ts: starts the FTP listener, runs an initial check, then loops every CHECK_INTERVAL
 npm test                   # vitest run: the server test suite (npm run test:watch for watch mode)
+npm run typecheck          # tsc: type-check only (no emit); Vitest and Node strip types without checking them
 npm run seed:uploads       # Put 5 bird + 1 non-bird test clips in UPLOAD_DIR (`-- <n>` for n bird clips); see "Test clips" below
 ```
 
@@ -99,22 +103,22 @@ npm test                   # vitest run: the client test suite (npm run test:wat
 npm start                  # Build + publish immediately, then repeat every 5 hours (needs S3/AWS env vars)
 ```
 
-The server and client each have a Vitest suite (`server/test/`, `client/test/`); the publish script has no tests, and the server has no linter. Verify server changes with `npm test` (add/update tests alongside behavior changes) and, for loop/FTP wiring in `index.js`, by running `npm start` against a scratch `DATA_DIR`; verify client changes with `npm test`, `npm run lint`, and `npm run build` (add/update tests alongside changes to `lib/`, `clip-grid.tsx`, or `lightbox.tsx`).
+The server and client each have a Vitest suite (`server/test/`, `client/test/`); the publish script has no tests, and the server has no linter. Verify server changes with `npm run typecheck` and `npm test` (add/update tests alongside behavior changes) and, for loop/FTP wiring in `index.ts`, by running `npm start` against a scratch `DATA_DIR`; verify client changes with `npm test`, `npm run lint`, and `npm run build` (add/update tests alongside changes to `lib/`, `clip-grid.tsx`, or `lightbox.tsx`).
 
 ### Test clips (no camera)
 
-`npm run seed:uploads [-- <count>]` (`scripts/seed-uploads.js` → `lib/seed-uploads.js`) picks `count` (default 5) random bird photos from `test-birds/images/` plus `max(1, floor(count / 3))` non-bird photos (filenames starting with `non`, e.g. `nonbird.jpg`; extra on top of `count`, skipped with a warning if none exist), shuffles them together, and encodes each as a 3-second still MP4 named `[CAMERA_NAME]_00_[YYYYMMDDHHMMSS].mp4` in `UPLOAD_DIR`. Within each pool, no photo repeats until every one has been used, then rounds are reshuffled. Timestamps end at "now" and step back by `max(300, VIDEO_COOLDOWN_SECONDS + 60)` seconds so the cooldown keeps them all. Files are written as `*.partial` and renamed, so a running server never sees half-written videos. The next tick processes them for real (Gemini calls included).
+`npm run seed:uploads [-- <count>]` (`scripts/seed-uploads.ts` → `lib/seed-uploads.ts`) picks `count` (default 5) random bird photos from `test-birds/images/` plus `max(1, floor(count / 3))` non-bird photos (filenames starting with `non`, e.g. `nonbird.jpg`; extra on top of `count`, skipped with a warning if none exist), shuffles them together, and encodes each as a 3-second still MP4 named `[CAMERA_NAME]_00_[YYYYMMDDHHMMSS].mp4` in `UPLOAD_DIR`. Within each pool, no photo repeats until every one has been used, then rounds are reshuffled. Timestamps end at "now" and step back by `max(300, VIDEO_COOLDOWN_SECONDS + 60)` seconds so the cooldown keeps them all. Files are written as `*.partial` and renamed, so a running server never sees half-written videos. The next tick processes them for real (Gemini calls included).
 
 ### Server tests
 
-- **Vitest 4** (not 5: Vitest 5 requires Node 22+, and the server Docker image is `node:20`). Config in `server/vitest.config.js`; `restoreMocks`, `unstubEnvs`, and `unstubGlobals` are on, so `vi.spyOn`/`vi.stubEnv`/`vi.stubGlobal` reset between tests.
-- `test/setup.js` silences `console.log/warn/error` with spies before each test; assert on `console.*` to check logging.
-- `test/helpers.js`: `useTempDirs()` returns a temp-dir factory with automatic per-test cleanup; `reolinkTimestamp(date)` builds Reolink-style `YYYYMMDDHHMMSS` local-time strings.
+- **Vitest 4** (it handles `.ts` natively; upgrading to 5 is possible now that the server is on Node 24, but hasn't been done). Config in `server/vitest.config.ts`; `restoreMocks`, `unstubEnvs`, and `unstubGlobals` are on, so `vi.spyOn`/`vi.stubEnv`/`vi.stubGlobal` reset between tests.
+- `test/setup.ts` silences `console.log/warn/error` with spies before each test; assert on `console.*` to check logging.
+- `test/helpers.ts`: `useTempDirs()` returns a temp-dir factory with automatic per-test cleanup; `reolinkTimestamp(date)` builds Reolink-style `YYYYMMDDHHMMSS` local-time strings; `fake<T>(obj)` types a partial stand-in (e.g. a Storage with only the methods a test uses) as `T`. Fake factories that tests also inspect return `obj as typeof obj & Storage` so the mocks stay typed.
 - Tests never touch real data or services: SQLite tests point `DATA_DIR` at a temp dir via `vi.stubEnv`; `@google/genai` and `ftp-srv` are replaced with `vi.mock`; BirdNET-Go is a stubbed global `fetch` router. `ftp-clips` tests generate a real 2-second video with the bundled `ffmpeg-static` binary and extract real thumbnails.
 - Time-dependent tests use `vi.useFakeTimers({ toFake: ['Date'] })` + `vi.setSystemTime()`; time-zone tests use `vi.stubEnv('TZ', ...)` (Node picks up `TZ` changes at runtime).
-- `test/storage.test.js` fails if a `Storage` facade method is missing from `SQLiteStorage` or from its delegation-args table, enforcing the "add to both" rule below.
+- `test/storage.test.ts` fails if a `Storage` facade method is missing from `SQLiteStorage` or from its delegation-args table, enforcing the "add to both" rule below at runtime (the `StorageProvider` interface enforces it at type-check time).
 - `seed-uploads` tests encode tiny ffmpeg-generated JPEGs and run the output through `discoverNewClips()` to confirm the filenames and videos are accepted.
-- `index.js` itself is not unit-tested (it starts the FTP server on import); keep testable logic in `lib/` modules.
+- `index.ts` itself is not unit-tested (it starts the FTP server on import); keep testable logic in `lib/` modules.
 
 ### Client tests
 
@@ -127,22 +131,22 @@ The server and client each have a Vitest suite (`server/test/`, `client/test/`);
 
 ### Server
 
-- **Main loop** (`server/index.js`) — `initializeApp()` creates `DOWNLOAD_DIR`/`UPLOAD_DIR`, the `Storage`, `AIProvider`, and (if enabled) `BirdNetProvider`. Then it starts the FTP listener, runs one check immediately, and schedules `triggerCheck()` every `CHECK_INTERVAL` ms (code default 10 min; `.env.example` uses 2 h). `triggerCheck()` is guarded by an `isProcessing` flag so a slow run (due to `PROCESS_DELAY` throttling) never overlaps the next. Each tick, in order:
+- **Main loop** (`server/index.ts`) — `initializeApp()` creates `DOWNLOAD_DIR`/`UPLOAD_DIR`, the `Storage`, `AIProvider`, and (if enabled) `BirdNetProvider`. Then it starts the FTP listener, runs one check immediately, and schedules `triggerCheck()` every `CHECK_INTERVAL` ms (code default 10 min; `.env.example` uses 2 h). `triggerCheck()` is guarded by an `isProcessing` flag so a slow run (due to `PROCESS_DELAY` throttling) never overlaps the next. Each tick, in order:
   1. `pruneOldData()` — retention (below)
   2. `birdnetProvider.syncDetections()` — if enabled
   3. `discoverNewClips()` — scan uploads, extract thumbnails
-  4. `applyCooldown()` (`lib/clip-processing.js`) — if `VIDEO_COOLDOWN_SECONDS` > 0, sorts clips chronologically and discards any whose timestamp falls within that window *after* the later of an earlier clip kept in this batch and the newest stored clip (`storage.getMostRecentClipTimestamp()`, only if at or before it), deleting their video + thumbnail immediately without calling the AI. Avoids burning API calls on motion-triggered bursts of near-duplicate clips. Clips *older* than the stored timestamp (retries of a failed clip, late backlog uploads) are not measured against it, so they aren't discarded (nor checked against older stored clips).
-  5. `processClips()` (`lib/clip-processing.js`) — sends each thumbnail to Gemini, waiting `PROCESS_DELAY` ms (default 30s) after each call, including failed ones (often rate limits)
+  4. `applyCooldown()` (`lib/clip-processing.ts`) — if `VIDEO_COOLDOWN_SECONDS` > 0, sorts clips chronologically and discards any whose timestamp falls within that window *after* the later of an earlier clip kept in this batch and the newest stored clip (`storage.getMostRecentClipTimestamp()`, only if at or before it), deleting their video + thumbnail immediately without calling the AI. Avoids burning API calls on motion-triggered bursts of near-duplicate clips. Clips *older* than the stored timestamp (retries of a failed clip, late backlog uploads) are not measured against it, so they aren't discarded (nor checked against older stored clips).
+  5. `processClips()` (`lib/clip-processing.ts`) — sends each thumbnail to Gemini, waiting `PROCESS_DELAY` ms (default 30s) after each call, including failed ones (often rate limits)
   6. Stores successful clips, then deletes their uploaded videos. Failed clips keep their video and are retried next tick.
-  7. `generateDailyImages()` (`lib/daily-image.js`) — daily species image (below)
+  7. `generateDailyImages()` (`lib/daily-image.ts`) — daily species image (below)
   Each step's errors are caught and logged so one failure doesn't kill the loop.
-- **FTP listener** (`server/lib/ftp-listener.js`) — always-on `ftp-srv` server on `FTP_HOST:FTP_PORT` with the upload dir as FTP root. Anonymous login is disabled; if `FTP_USERNAME` is set, credentials must match, otherwise any login is accepted. Pure plumbing — no clip/AI logic.
-- **Clip discovery** (`server/lib/ftp-clips.js`) — walks `UPLOAD_DIR` (plus one level of subdirectories) for `mp4/264/265/h264/h265` files, parses Reolink's FTP filename convention `[Camera]_[Channel]_[YYYYMMDDHHMMSS].ext` (timestamp interpreted in the **server's local time zone**; falls back to file mtime + `CAMERA_NAME` if unmatched). **Clip ID = recording time in Unix seconds**, which is also the dedupe key: uploads whose ID is already in `storage.data()`, or that repeat an ID already yielding a clip in the same scan (e.g. two channels in the same second), are skipped and their video deleted. Extracts a JPEG frame at the 1-second mark via `ffmpeg-static`/`fluent-ffmpeg` (fixed offset, because `ffmpeg-static` doesn't bundle `ffprobe`), skipping extraction if the thumbnail already exists.
-- **AI provider** (`server/lib/ai-provider.js`) — sends the base64 JPEG plus the active prompt to Gemini via `@google/genai` (default model `gemini-2.5-flash`), parses the JSON response, and tags each result (a single object is tagged too, but returned as-is; `addClip()` wraps it in an array) with the `ai_model_id`/`ai_prompt_id` settings row IDs used. A clip can produce multiple identification rows (one per species).
-- **Daily image** (`server/lib/daily-image.js`) — a local day counts as complete at 7 AM (`DAY_COMPLETE_HOUR`, server local time) the following day; clip arrival plays no part. Each tick, for every completed day in the last `DAILY_IMAGE_LOOKBACK_DAYS` (default 7, never today) with no `daily_images` row, it collects that day's species via `storage.getBirdSpeciesBetween()` (local midnight to midnight): video identifications with `is_bird` plus BirdNET-Go audio species, merged case-insensitively, minus blank/"unknown"/"unidentified", title-cased and sorted. With no known species it inserts a row with `local_path` NULL and no AI call (the client shows "No birds identified"). Otherwise `AIProvider.generateImage()` fills `{species}` in the active `ai_image_prompt` and calls the active `ai_image_model` (default `gemini-3.1-flash-lite-image`, square `1:1`, `responseModalities: ['IMAGE']`); the image is written to `downloads/YYYY/M/D/daily-YYYY-MM-DD.png` and recorded with the settings IDs used. Failed calls store nothing and are retried next tick; it waits `PROCESS_DELAY` after each AI call. Once a row exists the day is never regenerated, even if late uploads add species (the row's `species` shows what was drawn).
-- **BirdNET-Go provider** (`server/lib/birdnet-provider.js`) — optional (`BIRDNET_ENABLED=true` *and* `BIRDNET_GO_URL`). Pages through `GET /api/v2/detections` (newest-first, 100 per page), stopping at the last synced `birdnet_detection_id` or the `BIRDNET_LOOKBACK_HOURS` cutoff. Detections at or above `BIRDNET_MIN_CONFIDENCE` are persisted: the audio clip is downloaded (`GET /api/v2/audio/{id}`) into the dated `downloads/YYYY/M/D/` tree, and a per-species clipart image is downloaded once (`GET /api/v2/media/species-image?name={scientificName}`) and reused for every future detection of that species. Audio identifications are **not** correlated to video clips — they're an independent record stream keyed by BirdNET-Go's own detection ID.
-- **Retention** (`server/lib/retention.js`) — deletes clips + identifications (by `created_at`) and audio identifications (by `detected_at`, compared via SQLite `julianday()` since BirdNET-Go timestamps carry a UTC offset) older than `RETENTION_DAYS`, and `daily_images` rows dated before the cutoff's local day, then removes `downloads/YYYY/M/D/` directories older than the cutoff day (and empty month/year dirs). `downloads/species/` is never pruned — it's a small persistent per-species cache.
-- **Storage** (`server/lib/storage.js` → `server/lib/sqlite-storage.js`) — facade over a swappable provider. The SQLite provider uses `better-sqlite3` with WAL mode and foreign keys on, creates the schema with `CREATE TABLE IF NOT EXISTS`, seeds default `ai_prompt`/`ai_model` settings on first run, and runs an in-place migration for the legacy `identifications.model` column. `commit()` is a no-op (writes are immediate). New storage methods must be added to both the facade and the SQLite provider.
+- **FTP listener** (`server/lib/ftp-listener.ts`) — always-on `ftp-srv` server on `FTP_HOST:FTP_PORT` with the upload dir as FTP root. Anonymous login is disabled; if `FTP_USERNAME` is set, credentials must match, otherwise any login is accepted. Pure plumbing — no clip/AI logic.
+- **Clip discovery** (`server/lib/ftp-clips.ts`) — walks `UPLOAD_DIR` (plus one level of subdirectories) for `mp4/264/265/h264/h265` files, parses Reolink's FTP filename convention `[Camera]_[Channel]_[YYYYMMDDHHMMSS].ext` (timestamp interpreted in the **server's local time zone**; falls back to file mtime + `CAMERA_NAME` if unmatched). **Clip ID = recording time in Unix seconds**, which is also the dedupe key: uploads whose ID is already in `storage.data()`, or that repeat an ID already yielding a clip in the same scan (e.g. two channels in the same second), are skipped and their video deleted. Extracts a JPEG frame at the 1-second mark via `ffmpeg-static`/`fluent-ffmpeg` (fixed offset, because `ffmpeg-static` doesn't bundle `ffprobe`), skipping extraction if the thumbnail already exists.
+- **AI provider** (`server/lib/ai-provider.ts`) — sends the base64 JPEG plus the active prompt to Gemini via `@google/genai` (default model `gemini-2.5-flash`), parses the JSON response, and tags each result (a single object is tagged too, but returned as-is; `addClip()` wraps it in an array) with the `ai_model_id`/`ai_prompt_id` settings row IDs used. A clip can produce multiple identification rows (one per species).
+- **Daily image** (`server/lib/daily-image.ts`) — a local day counts as complete at 7 AM (`DAY_COMPLETE_HOUR`, server local time) the following day; clip arrival plays no part. Each tick, for every completed day in the last `DAILY_IMAGE_LOOKBACK_DAYS` (default 7, never today) with no `daily_images` row, it collects that day's species via `storage.getBirdSpeciesBetween()` (local midnight to midnight): video identifications with `is_bird` plus BirdNET-Go audio species, merged case-insensitively, minus blank/"unknown"/"unidentified", title-cased and sorted. With no known species it inserts a row with `local_path` NULL and no AI call (the client shows "No birds identified"). Otherwise `AIProvider.generateImage()` fills `{species}` in the active `ai_image_prompt` and calls the active `ai_image_model` (default `gemini-3.1-flash-lite-image`, square `1:1`, `responseModalities: ['IMAGE']`); the image is written to `downloads/YYYY/M/D/daily-YYYY-MM-DD.png` and recorded with the settings IDs used. Failed calls store nothing and are retried next tick; it waits `PROCESS_DELAY` after each AI call. Once a row exists the day is never regenerated, even if late uploads add species (the row's `species` shows what was drawn).
+- **BirdNET-Go provider** (`server/lib/birdnet-provider.ts`) — optional (`BIRDNET_ENABLED=true` *and* `BIRDNET_GO_URL`). Pages through `GET /api/v2/detections` (newest-first, 100 per page), stopping at the last synced `birdnet_detection_id` or the `BIRDNET_LOOKBACK_HOURS` cutoff. Detections at or above `BIRDNET_MIN_CONFIDENCE` are persisted: the audio clip is downloaded (`GET /api/v2/audio/{id}`) into the dated `downloads/YYYY/M/D/` tree, and a per-species clipart image is downloaded once (`GET /api/v2/media/species-image?name={scientificName}`) and reused for every future detection of that species. Audio identifications are **not** correlated to video clips — they're an independent record stream keyed by BirdNET-Go's own detection ID.
+- **Retention** (`server/lib/retention.ts`) — deletes clips + identifications (by `created_at`) and audio identifications (by `detected_at`, compared via SQLite `julianday()` since BirdNET-Go timestamps carry a UTC offset) older than `RETENTION_DAYS`, and `daily_images` rows dated before the cutoff's local day, then removes `downloads/YYYY/M/D/` directories older than the cutoff day (and empty month/year dirs). `downloads/species/` is never pruned — it's a small persistent per-species cache.
+- **Storage** (`server/lib/storage.ts` → `server/lib/sqlite-storage.ts`) — facade over a swappable provider. The SQLite provider uses `better-sqlite3` with WAL mode and foreign keys on, creates the schema with `CREATE TABLE IF NOT EXISTS`, seeds default `ai_prompt`/`ai_model` settings on first run, and runs an in-place migration for the legacy `identifications.model` column. `commit()` is a no-op (writes are immediate). New storage methods must be added to the `StorageProvider` interface in `lib/types.ts`, the facade, and the SQLite provider (`tsc` fails if either class is missing one).
 
 ### Client
 
@@ -174,7 +178,7 @@ The server and client each have a Vitest suite (`server/test/`, `client/test/`);
 
 **settings** — `id` (autoincrement PK), `name`, `value`, `is_active` (boolean). Index on `name`. Used for `ai_model`, `ai_prompt`, `ai_image_model`, and `ai_image_prompt` (each seeded on first run if no row with that name exists). Settings are versioned: identifications reference the exact row used, so to change the model/prompt insert a new row and flip `is_active` rather than editing an existing row's `value`.
 
-Schema changes go in `SQLiteStorage._createSchema()`; existing databases need an explicit migration (see `_migrateIdentifications()` for the pattern), since `CREATE TABLE IF NOT EXISTS` won't add columns. Update the client's row interfaces in `client/lib/db.ts` to match.
+Schema changes go in `SQLiteStorage._createSchema()` (and the row types in `server/lib/types.ts`); existing databases need an explicit migration (see `_migrateIdentifications()` for the pattern), since `CREATE TABLE IF NOT EXISTS` won't add columns. Update the client's row interfaces in `client/lib/db.ts` to match.
 
 ## Configuration
 
@@ -187,14 +191,14 @@ When adding an env var, update the relevant `.env.example`, the README, and this
 
 ## Key Conventions
 
-- Server is plain JavaScript ES modules (`"type": "module"`), JSDoc for documentation, 2-space indent in `index.js`/`lib/ftp-*.js`/`birdnet-provider.js`/`clip-processing.js`/`daily-image.js`/`seed-uploads.js`/`scripts/`/`test/` and 4-space in `storage.js`/`sqlite-storage.js`/`ai-provider.js`/`retention.js` — match the file you're editing.
+- Server is TypeScript ES modules (`"type": "module"`, `strict`) run directly by Node 24's built-in type stripping, with no build step. Only erasable syntax is allowed (no `enum`, `namespace`, or constructor parameter properties; `erasableSyntaxOnly` enforces this), and type-only imports must use `import type` (`verbatimModuleSyntax`). Relative imports use the `.ts` extension (`allowImportingTsExtensions`). Put types in the signatures and keep JSDoc for descriptions only, with no `{type}` annotations. Shared shapes go in `lib/types.ts`; module-specific option and response types live in their module. Indentation is 2-space in `index.ts`/`lib/ftp-*.ts`/`birdnet-provider.ts`/`clip-processing.ts`/`daily-image.ts`/`seed-uploads.ts`/`ffmpeg-path.ts`/`types.ts`/`scripts/`/`test/` and 4-space in `storage.ts`/`sqlite-storage.ts`/`ai-provider.ts`/`retention.ts` — match the file you're editing.
 - Uses the `fileURLToPath` pattern for a `__dirname` equivalent in ES module code.
 - Server logs to stdout with `console.log`/`console.error`; `✓` prefixes successful steps.
 - Camera pushes clips via FTP; no camera polling or cloud auth.
 - Uploaded videos are deleted once successfully processed into a thumbnail + DB row (or when discarded by the cooldown, or found to be duplicates); downloads organized by date: `server/downloads/YYYY/M/D/` (month/day not zero-padded).
 - BirdNET-Go audio sync is optional and entirely separate from FTP/video processing.
 - Client: Tailwind utility classes with `dark:` variants for every color (dark mode is supported everywhere); zinc palette, blue-600/blue-400 links. Path alias `@/*` → `client/`. Plain `<img>`/`<a>` tags are used deliberately (static export, no image optimization).
-- Server Dockerfile: `node:20-slim` + build tools for `better-sqlite3`; `npm ci --omit=dev` (no test tooling in the image; `package.json` `engines` requires Node >= 20.19); declares volumes for `data/` and `downloads/` (`uploads/` isn't declared in the Dockerfile but is mounted by compose so failed clips survive recreates); exposes FTP control port `2121` and passive port range `30100-30110`.
+- Server Dockerfile: `node:24-slim` (needed to run `.ts` directly) + build tools for `better-sqlite3`; `npm ci --omit=dev` (no TypeScript/test tooling in the image, since Node only strips types; `package.json` `engines` requires Node >= 24); declares volumes for `data/` and `downloads/` (`uploads/` isn't declared in the Dockerfile but is mounted by compose so failed clips survive recreates); exposes FTP control port `2121` and passive port range `30100-30110`.
 - Client Dockerfile: `node:20`; installs client + scheduled-publish deps, runs the publish script; volumes `/app/data` (DB) and `/app/public/downloads` (media).
 - Deployment: root `docker-compose.yml` runs both containers on one host (`git pull && docker compose up -d --build`). Env comes from `server/.env`/`client/.env` via `env_file` at container creation (`.dockerignore` keeps `.env` out of images), so `.env` edits only need `docker compose up -d`, not a rebuild. Volumes `birdid-data`, `birdid-downloads`, `birdid-uploads` are `external: true` (created once with `docker volume create`; compose never deletes them) Both services set `TZ=America/Chicago` in the compose file — the server needs it because Reolink filename timestamps are parsed in local time and the daily image's 7 AM completion boundary is local (the image defaults to UTC). The publish container mounts `birdid-data` read-write because WAL-mode SQLite readers write the `-shm` file. FTP port mappings are hard-coded and must match `FTP_PORT`/`FTP_PASV_MIN`/`FTP_PASV_MAX`.
 - Commit messages follow Conventional Commits with a scope, e.g. `fix(server): ...`, `feat(client): ...`, `docs: ...`, `chore: ...`.

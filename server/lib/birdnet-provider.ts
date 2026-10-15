@@ -7,10 +7,44 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import type { Storage } from './storage.ts';
+
+/** A detection as returned by BirdNET-Go's /api/v2/detections (only the fields used here). */
+export interface BirdNetDetection {
+  id: number;
+  /** Local date, YYYY-MM-DD. */
+  date: string;
+  /** ISO 8601 with a UTC offset. */
+  timestamp: string;
+  commonName: string;
+  scientificName: string;
+  speciesCode?: string;
+  confidence: number;
+  verified?: string;
+  source?: { id?: string; displayName?: string };
+  beginTime?: string;
+  endTime?: string;
+}
+
+interface DetectionsPage {
+  data: BirdNetDetection[];
+  total_pages?: number;
+}
+
+export interface BirdNetOptions {
+  /** BirdNET-Go base URL, e.g. http://192.168.1.225:8080 */
+  baseUrl: string;
+  /** Minimum confidence (0-1) required to persist a detection. */
+  minConfidence: number;
+  /** How far back to look on first sync / to catch missed detections. */
+  lookbackHours: number;
+  /** Location to store species images and audio clips. */
+  downloadDir: string;
+}
 
 const PAGE_SIZE = 100;
 
-function slugifyScientificName(scientificName) {
+function slugifyScientificName(scientificName: string): string {
   return scientificName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
@@ -18,15 +52,13 @@ function slugifyScientificName(scientificName) {
 }
 
 export class BirdNetProvider {
-  /**
-   * @param {import('./storage.js').Storage} storage
-   * @param {Object} options
-   * @param {string} options.baseUrl - BirdNET-Go base URL, e.g. http://192.168.1.225:8080
-   * @param {number} options.minConfidence - Minimum confidence (0-1) required to persist a detection.
-   * @param {number} options.lookbackHours - How far back to look on first sync / to catch missed detections.
-   * @param {string} options.downloadDir - Location to store species images and audio clips.
-   */
-  constructor(storage, { baseUrl, minConfidence, lookbackHours, downloadDir }) {
+  storage: Storage;
+  baseUrl: string;
+  minConfidence: number;
+  lookbackHours: number;
+  downloadDir: string;
+
+  constructor(storage: Storage, { baseUrl, minConfidence, lookbackHours, downloadDir }: BirdNetOptions) {
     this.storage = storage;
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.minConfidence = minConfidence;
@@ -34,15 +66,15 @@ export class BirdNetProvider {
     this.downloadDir = downloadDir;
   }
 
-  async _fetchJson(urlPath) {
+  async _fetchJson<T>(urlPath: string): Promise<T> {
     const response = await fetch(`${this.baseUrl}${urlPath}`);
     if (!response.ok) {
       throw new Error(`BirdNET-Go request failed: ${urlPath} (${response.status})`);
     }
-    return response.json();
+    return response.json() as Promise<T>;
   }
 
-  async _downloadFile(urlPath, destPath) {
+  async _downloadFile(urlPath: string, destPath: string): Promise<void> {
     const response = await fetch(`${this.baseUrl}${urlPath}`);
     if (!response.ok) {
       throw new Error(`BirdNET-Go download failed: ${urlPath} (${response.status})`);
@@ -55,9 +87,9 @@ export class BirdNetProvider {
   /**
    * Ensures a species clipart image exists locally for the given scientific name,
    * downloading and caching it in storage the first time it's seen.
-   * @returns {Promise<number>} The species_images row ID.
+   * @returns The species_images row ID.
    */
-  async _ensureSpeciesImage(scientificName, commonName) {
+  async _ensureSpeciesImage(scientificName: string, commonName: string): Promise<number> {
     const existing = this.storage.getSpeciesImage(scientificName);
     if (existing) return existing.id;
 
@@ -72,7 +104,7 @@ export class BirdNetProvider {
     });
   }
 
-  async _downloadAudioClip(detection) {
+  async _downloadAudioClip(detection: BirdNetDetection): Promise<string> {
     const [year, month, day] = detection.date.split('-');
     const clipDir = path.join(this.downloadDir, year, String(Number(month)), String(Number(day)));
     const destPath = path.join(clipDir, `audio-${detection.id}.wav`);
@@ -83,18 +115,18 @@ export class BirdNetProvider {
   /**
    * Fetches new BirdNET-Go detections since the last sync, persists the ones
    * meeting the confidence threshold, and downloads their audio + species clipart.
-   * @returns {Promise<number>} Number of detections persisted.
+   * @returns Number of detections persisted.
    */
-  async syncDetections() {
+  async syncDetections(): Promise<number> {
     const lastId = this.storage.getLatestAudioDetectionId();
     const cutoffMs = Date.now() - this.lookbackHours * 60 * 60 * 1000;
 
-    const newDetections = [];
+    const newDetections: BirdNetDetection[] = [];
     let offset = 0;
     let totalPages = 1;
 
     do {
-      const page = await this._fetchJson(`/api/v2/detections?limit=${PAGE_SIZE}&offset=${offset}`);
+      const page = await this._fetchJson<DetectionsPage>(`/api/v2/detections?limit=${PAGE_SIZE}&offset=${offset}`);
       totalPages = page.total_pages ?? 1;
 
       for (const detection of page.data) {

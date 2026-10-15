@@ -1,11 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useTempDirs } from './helpers.js';
+import { useTempDirs } from './helpers.ts';
+import type { Storage } from '../lib/storage.ts';
+import type { SettingWithId } from '../lib/types.ts';
 
 const { generateContent, GoogleGenAI } = vi.hoisted(() => {
   const generateContent = vi.fn();
-  const GoogleGenAI = vi.fn(function GoogleGenAI() {
+  const GoogleGenAI = vi.fn(function GoogleGenAI(this: { models: unknown }) {
     this.models = { generateContent };
   });
   return { generateContent, GoogleGenAI };
@@ -13,18 +15,19 @@ const { generateContent, GoogleGenAI } = vi.hoisted(() => {
 
 vi.mock('@google/genai', () => ({ GoogleGenAI }));
 
-const { AIProvider, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_PROMPT, DEFAULT_MODEL, DEFAULT_PROMPT } = await import('../lib/ai-provider.js');
+const { AIProvider, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_PROMPT, DEFAULT_MODEL, DEFAULT_PROMPT } = await import('../lib/ai-provider.ts');
 
 const makeTempDir = useTempDirs();
 
 const IMAGE_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x01, 0x02, 0x03]);
 
-const fakeStorage = (settings = {}) => ({
-  getSettingWithId: vi.fn(name => settings[name] ?? null),
-});
+const fakeStorage = (settings: Record<string, SettingWithId> = {}) => {
+  const storage = { getSettingWithId: vi.fn((name: string) => settings[name] ?? null) };
+  return storage as typeof storage & Storage;
+};
 
 describe('AIProvider', () => {
-  let thumbnailPath;
+  let thumbnailPath: string;
   const clip = { id: 1751652000 };
 
   beforeEach(() => {

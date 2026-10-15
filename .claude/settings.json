@@ -4,6 +4,7 @@
     "allow": [
       "Bash(npm run lint)",
       "Bash(npm run build)",
+      "Bash(npm run typecheck)",
       "Bash(npm install)",
       "Bash(npm ci)",
       "Bash(git status:*)",

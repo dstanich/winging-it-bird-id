@@ -1,20 +1,22 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyCooldown, processClips } from '../lib/clip-processing.js';
-import { useTempDirs } from './helpers.js';
+import { applyCooldown, processClips } from '../lib/clip-processing.ts';
+import { fake, useTempDirs } from './helpers.ts';
+import type { AIProvider } from '../lib/ai-provider.ts';
+import type { Clip } from '../lib/types.ts';
 
 const makeTempDir = useTempDirs();
 
 describe('applyCooldown', () => {
-  let dir;
+  let dir: string;
 
   beforeEach(() => {
     dir = makeTempDir();
   });
 
   /** Creates a clip with real video/thumbnail files on disk. */
-  const makeClip = (id) => {
+  const makeClip = (id: number) => {
     const localVideoPath = path.join(dir, `Cam_00_${id}.mp4`);
     const localThumbnailPath = path.join(dir, `${id}.jpg`);
     fs.writeFileSync(localVideoPath, 'video');
@@ -22,8 +24,8 @@ describe('applyCooldown', () => {
     return { id, media: path.basename(localVideoPath), localVideoPath, localThumbnailPath };
   };
 
-  const ids = (clips) => clips.map(c => c.id);
-  const filesExist = (clip) => fs.existsSync(clip.localVideoPath) && fs.existsSync(clip.localThumbnailPath);
+  const ids = (clips: Clip[]) => clips.map(c => c.id);
+  const filesExist = (clip: ReturnType<typeof makeClip>) => fs.existsSync(clip.localVideoPath) && fs.existsSync(clip.localThumbnailPath);
 
   it('returns the input unchanged when cooldown is disabled', () => {
     const clips = [makeClip(300), makeClip(100), makeClip(101)];
@@ -136,15 +138,15 @@ describe('processClips', () => {
     vi.useRealTimers();
   });
 
-  const clip = (id) => ({ id, localThumbnailPath: `/thumbs/${id}.jpg` });
+  const clip = (id: number): Clip => ({ id, localThumbnailPath: `/thumbs/${id}.jpg` });
 
   it('identifies each clip and attaches the AI response', async () => {
     const aiProvider = {
-      identifyBird: vi.fn(async c => [{ is_bird: true, species: `bird-${c.id}` }]),
+      identifyBird: vi.fn(async (c: Clip) => [{ is_bird: true, species: `bird-${c.id}` }]),
     };
     const clips = [clip(1), clip(2)];
 
-    const result = await processClips(clips, aiProvider, 0);
+    const result = await processClips(clips, fake<AIProvider>(aiProvider), 0);
 
     expect(aiProvider.identifyBird).toHaveBeenNthCalledWith(1, clips[0], '/thumbs/1.jpg');
     expect(aiProvider.identifyBird).toHaveBeenNthCalledWith(2, clips[1], '/thumbs/2.jpg');
@@ -164,7 +166,7 @@ describe('processClips', () => {
     };
     const clips = [clip(1), clip(2)];
 
-    const result = await processClips(clips, aiProvider, 0);
+    const result = await processClips(clips, fake<AIProvider>(aiProvider), 0);
 
     expect(result.map(c => c.id)).toEqual([2]);
     expect(clips[0].birdIdentification).toBeUndefined();
@@ -173,7 +175,7 @@ describe('processClips', () => {
 
   it('returns an empty array for no clips', async () => {
     const aiProvider = { identifyBird: vi.fn() };
-    expect(await processClips([], aiProvider, 0)).toEqual([]);
+    expect(await processClips([], fake<AIProvider>(aiProvider), 0)).toEqual([]);
     expect(aiProvider.identifyBird).not.toHaveBeenCalled();
   });
 
@@ -182,7 +184,7 @@ describe('processClips', () => {
     const aiProvider = { identifyBird: vi.fn().mockResolvedValue([]) };
     let settled = false;
 
-    const done = processClips([clip(1), clip(2)], aiProvider, 30000).then((r) => { settled = true; return r; });
+    const done = processClips([clip(1), clip(2)], fake<AIProvider>(aiProvider), 30000).then((r) => { settled = true; return r; });
 
     await vi.advanceTimersByTimeAsync(0);
     expect(aiProvider.identifyBird).toHaveBeenCalledTimes(1);
@@ -207,7 +209,7 @@ describe('processClips', () => {
         .mockResolvedValueOnce([]),
     };
 
-    const done = processClips([clip(1), clip(2)], aiProvider, 30000);
+    const done = processClips([clip(1), clip(2)], fake<AIProvider>(aiProvider), 30000);
 
     await vi.advanceTimersByTimeAsync(29999);
     expect(aiProvider.identifyBird).toHaveBeenCalledTimes(1);
@@ -215,19 +217,5 @@ describe('processClips', () => {
     expect(aiProvider.identifyBird).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(30000);
     expect((await done).map(c => c.id)).toEqual([2]);
-  });
-
-  it('accepts the delay as a string (as read from PROCESS_DELAY)', async () => {
-    vi.useFakeTimers();
-    const aiProvider = { identifyBird: vi.fn().mockResolvedValue([]) };
-
-    const done = processClips([clip(1), clip(2)], aiProvider, '500');
-
-    await vi.advanceTimersByTimeAsync(499);
-    expect(aiProvider.identifyBird).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(aiProvider.identifyBird).toHaveBeenCalledTimes(2);
-    await vi.advanceTimersByTimeAsync(500);
-    expect(await done).toHaveLength(2);
   });
 });

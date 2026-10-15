@@ -1,8 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { pruneOldData } from '../lib/retention.js';
-import { useTempDirs } from './helpers.js';
+import { pruneOldData } from '../lib/retention.ts';
+import { useTempDirs } from './helpers.ts';
+import type { Storage } from '../lib/storage.ts';
 
 const makeTempDir = useTempDirs();
 
@@ -10,24 +11,27 @@ const makeTempDir = useTempDirs();
 const NOW = new Date(2026, 6, 15, 12, 0, 0);
 const RETENTION_DAYS = 10;
 
-const fakeStorage = ({ clipsDeleted = 0, identificationsDeleted = 0, audioIdentificationsDeleted = 0, dailyImagesDeleted = 0 } = {}) => ({
-  pruneClipsBefore: vi.fn().mockReturnValue({ clipsDeleted, identificationsDeleted }),
-  pruneAudioIdentificationsBefore: vi.fn().mockReturnValue({ audioIdentificationsDeleted }),
-  pruneDailyImagesBefore: vi.fn().mockReturnValue({ dailyImagesDeleted }),
-});
+const fakeStorage = ({ clipsDeleted = 0, identificationsDeleted = 0, audioIdentificationsDeleted = 0, dailyImagesDeleted = 0 } = {}) => {
+  const storage = {
+    pruneClipsBefore: vi.fn().mockReturnValue({ clipsDeleted, identificationsDeleted }),
+    pruneAudioIdentificationsBefore: vi.fn().mockReturnValue({ audioIdentificationsDeleted }),
+    pruneDailyImagesBefore: vi.fn().mockReturnValue({ dailyImagesDeleted }),
+  };
+  return storage as typeof storage & Storage;
+};
 
 /** Creates downloads/YYYY/M/D/ (non-padded) containing a file, for the given local date. */
-const makeDayDir = (downloadDir, date) => {
+const makeDayDir = (downloadDir: string, date: Date) => {
   const dir = path.join(downloadDir, `${date.getFullYear()}`, `${date.getMonth() + 1}`, `${date.getDate()}`);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, '123.jpg'), 'jpeg');
   return dir;
 };
 
-const daysAgo = (n) => new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - n, 12);
+const daysAgo = (n: number) => new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - n, 12);
 
 describe('pruneOldData', () => {
-  let downloadDir;
+  let downloadDir: string;
 
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });

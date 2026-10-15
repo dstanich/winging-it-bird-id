@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:24-slim
 
 # Build tools for better-sqlite3's native module (used only if no prebuilt binary matches the platform)
 RUN apt-get update && apt-get install -y --no-install-recommends \

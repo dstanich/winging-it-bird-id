@@ -2,46 +2,53 @@
  * Main entry point
  */
 
-import { startFtpListener } from './lib/ftp-listener.js';
-import { discoverNewClips } from './lib/ftp-clips.js';
-import { Storage } from './lib/storage.js';
-import { AIProvider } from './lib/ai-provider.js';
-import { BirdNetProvider } from './lib/birdnet-provider.js';
-import { pruneOldData } from './lib/retention.js';
-import { applyCooldown, processClips } from './lib/clip-processing.js';
-import { generateDailyImages } from './lib/daily-image.js';
+import { startFtpListener } from './lib/ftp-listener.ts';
+import { discoverNewClips } from './lib/ftp-clips.ts';
+import { Storage } from './lib/storage.ts';
+import { AIProvider } from './lib/ai-provider.ts';
+import { BirdNetProvider } from './lib/birdnet-provider.ts';
+import { pruneOldData } from './lib/retention.ts';
+import { applyCooldown, processClips } from './lib/clip-processing.ts';
+import { generateDailyImages } from './lib/daily-image.ts';
+import type { Clip } from './lib/types.ts';
 import * as fs from 'fs';
 import 'dotenv/config'
 
 // Configuration
-const CHECK_INTERVAL = parseInt(process.env.CHECK_INTERVAL || 600000); // 10 minutes default
-const RETENTION_DAYS = parseInt(process.env.RETENTION_DAYS || 60);
+const CHECK_INTERVAL = parseInt(process.env.CHECK_INTERVAL || '600000'); // 10 minutes default
+const RETENTION_DAYS = parseInt(process.env.RETENTION_DAYS || '60');
 const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
 const FTP_HOST = process.env.FTP_HOST || '0.0.0.0';
-const FTP_PORT = parseInt(process.env.FTP_PORT || 2121);
+const FTP_PORT = parseInt(process.env.FTP_PORT || '2121');
 const FTP_USERNAME = process.env.FTP_USERNAME;
 const FTP_PASSWORD = process.env.FTP_PASSWORD;
 const FTP_PASV_URL = process.env.FTP_PASV_URL;
-const FTP_PASV_MIN = parseInt(process.env.FTP_PASV_MIN || 30100);
-const FTP_PASV_MAX = parseInt(process.env.FTP_PASV_MAX || 30110);
+const FTP_PASV_MIN = parseInt(process.env.FTP_PASV_MIN || '30100');
+const FTP_PASV_MAX = parseInt(process.env.FTP_PASV_MAX || '30110');
 const BIRDNET_ENABLED = process.env.BIRDNET_ENABLED === 'true';
 const BIRDNET_GO_URL = process.env.BIRDNET_GO_URL;
-const BIRDNET_MIN_CONFIDENCE = parseFloat(process.env.BIRDNET_MIN_CONFIDENCE || 0.7);
-const BIRDNET_LOOKBACK_HOURS = parseInt(process.env.BIRDNET_LOOKBACK_HOURS || 48);
-const VIDEO_COOLDOWN_SECONDS = parseInt(process.env.VIDEO_COOLDOWN_SECONDS || 0); // 0 = disabled
-const DAILY_IMAGE_LOOKBACK_DAYS = parseInt(process.env.DAILY_IMAGE_LOOKBACK_DAYS || 7);
+const BIRDNET_MIN_CONFIDENCE = parseFloat(process.env.BIRDNET_MIN_CONFIDENCE || '0.7');
+const BIRDNET_LOOKBACK_HOURS = parseInt(process.env.BIRDNET_LOOKBACK_HOURS || '48');
+const VIDEO_COOLDOWN_SECONDS = parseInt(process.env.VIDEO_COOLDOWN_SECONDS || '0'); // 0 = disabled
+const DAILY_IMAGE_LOOKBACK_DAYS = parseInt(process.env.DAILY_IMAGE_LOOKBACK_DAYS || '7');
+const PROCESS_DELAY = parseInt(process.env.PROCESS_DELAY || '30000');
 
 // Persistence / AI
-let storage;
-let aiProvider;
-let birdnetProvider;
+let downloadDir: string;
+let storage: Storage;
+let aiProvider: AIProvider;
+let birdnetProvider: BirdNetProvider | undefined;
 let isProcessing = false;
 
 /**
  * Initialize application
  */
-function initializeApp() {
+function initializeApp(): void {
   const { DOWNLOAD_DIR } = process.env;
+  if (!DOWNLOAD_DIR) {
+    throw new Error('DOWNLOAD_DIR is not set');
+  }
+  downloadDir = DOWNLOAD_DIR;
   const dirs = [DOWNLOAD_DIR, UPLOAD_DIR];
   for (const dir of dirs) {
     if (!fs.existsSync(dir)) {
@@ -58,7 +65,7 @@ function initializeApp() {
       baseUrl: BIRDNET_GO_URL,
       minConfidence: BIRDNET_MIN_CONFIDENCE,
       lookbackHours: BIRDNET_LOOKBACK_HOURS,
-      downloadDir: process.env.DOWNLOAD_DIR,
+      downloadDir,
     });
   }
 }
@@ -66,12 +73,12 @@ function initializeApp() {
 /**
  * Check for newly uploaded video files and extract thumbnails
  *
- * @returns {Promise<Array>} List of new clips with thumbnails extracted
+ * @returns List of new clips with thumbnails extracted
  */
-async function checkForNewClips() {
+async function checkForNewClips(): Promise<Clip[]> {
   try {
     console.log('\n=== Checking for new clips ===');
-    return await discoverNewClips(storage, UPLOAD_DIR, process.env.DOWNLOAD_DIR, process.env.CAMERA_NAME);
+    return await discoverNewClips(storage, UPLOAD_DIR, downloadDir, process.env.CAMERA_NAME);
   } catch (error) {
     console.error('Error checking for new clips:', error);
     return [];
@@ -81,9 +88,9 @@ async function checkForNewClips() {
 /**
  * Check for new clips and process them
  */
-async function checkAndProcessClips() {
+async function checkAndProcessClips(): Promise<void> {
   try {
-    await pruneOldData(storage, process.env.DOWNLOAD_DIR, RETENTION_DAYS);
+    await pruneOldData(storage, downloadDir, RETENTION_DAYS);
   } catch (error) {
     console.error('Error pruning old data:', error);
   }
@@ -99,7 +106,7 @@ async function checkAndProcessClips() {
   let clips = await checkForNewClips();
   const lastProcessedIso = storage.getMostRecentClipTimestamp();
   clips = applyCooldown(clips, lastProcessedIso ? Date.parse(lastProcessedIso) : null, VIDEO_COOLDOWN_SECONDS);
-  clips = await processClips(clips, aiProvider, process.env.PROCESS_DELAY || 30000);
+  clips = await processClips(clips, aiProvider, PROCESS_DELAY);
 
   // Add all successfully processed clips to storage and commit
   clips.forEach(clip => {
@@ -122,9 +129,9 @@ async function checkAndProcessClips() {
   // Generate daily species images; generateDailyImages() works out which days are ready
   try {
     await generateDailyImages(storage, aiProvider, {
-      downloadDir: process.env.DOWNLOAD_DIR,
+      downloadDir,
       lookbackDays: DAILY_IMAGE_LOOKBACK_DAYS,
-      delayMs: process.env.PROCESS_DELAY || 30000,
+      delayMs: PROCESS_DELAY,
     });
   } catch (error) {
     console.error('Error generating daily images:', error);
@@ -135,7 +142,7 @@ async function checkAndProcessClips() {
  * Guards against overlapping runs (e.g. if a check takes longer than
  * CHECK_INTERVAL due to the PROCESS_DELAY throttle in processClips()).
  */
-async function triggerCheck() {
+async function triggerCheck(): Promise<void> {
   if (isProcessing) {
     console.log('Skipping check: already processing');
     return;
@@ -154,7 +161,7 @@ async function triggerCheck() {
 /**
  * Main application loop
  */
-async function main() {
+async function main(): Promise<void> {
   console.log('Winging It Bird ID Application');
   console.log('==============================');
 

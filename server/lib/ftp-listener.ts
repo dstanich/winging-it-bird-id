@@ -6,19 +6,24 @@
 
 import { FtpSrv } from 'ftp-srv';
 
-/**
- * @param {Object} options
- * @param {string} options.uploadDir - directory FTP uploads are written to (mapped as the FTP root)
- * @param {string} [options.host] - default '0.0.0.0'
- * @param {number} [options.port] - default 2121
- * @param {string} [options.username]
- * @param {string} [options.password]
- * @param {string} [options.pasvUrl] - public/LAN IP clients should use for passive-mode data connections
- * @param {number} [options.pasvMin] - default 30100
- * @param {number} [options.pasvMax] - default 30110
- * @returns {Promise<Object>} { server, close }
- */
-export async function startFtpListener(options = {}) {
+export interface FtpListenerOptions {
+  /** Directory FTP uploads are written to (mapped as the FTP root). */
+  uploadDir: string;
+  /** Default '0.0.0.0'. */
+  host?: string;
+  /** Default 2121. */
+  port?: number;
+  username?: string;
+  password?: string;
+  /** Public/LAN IP clients should use for passive-mode data connections. */
+  pasvUrl?: string;
+  /** Default 30100. */
+  pasvMin?: number;
+  /** Default 30110. */
+  pasvMax?: number;
+}
+
+export async function startFtpListener(options: FtpListenerOptions): Promise<{ server: FtpSrv; close: () => Promise<unknown> }> {
   const host = options.host || '0.0.0.0';
   const port = options.port || 2121;
   const uploadDir = options.uploadDir;

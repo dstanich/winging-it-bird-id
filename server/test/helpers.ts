@@ -15,7 +15,7 @@ import { afterEach } from 'vitest';
  * @returns {() => string}
  */
 export function useTempDirs() {
-  const created = [];
+  const created: string[] = [];
   afterEach(() => {
     for (const dir of created.splice(0)) {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -33,8 +33,16 @@ export function useTempDirs() {
  * @param {Date} date
  * @returns {string}
  */
-export function reolinkTimestamp(date) {
-  const pad = (n) => String(n).padStart(2, '0');
+export function reolinkTimestamp(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`
     + `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+/**
+ * Types a partial stand-in (e.g. a fake Storage with only the methods a test
+ * needs) as the real thing, for passing to code under test.
+ */
+export function fake<T>(value: object): T {
+  return value as T;
 }

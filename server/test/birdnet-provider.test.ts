@@ -1,9 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BirdNetProvider } from '../lib/birdnet-provider.js';
-import { Storage } from '../lib/storage.js';
-import { useTempDirs } from './helpers.js';
+import { BirdNetProvider, type BirdNetDetection, type BirdNetOptions } from '../lib/birdnet-provider.ts';
+import type { SQLiteStorage } from '../lib/sqlite-storage.ts';
+import type { AudioIdentificationInput, SpeciesImageInput, SpeciesImageRow } from '../lib/types.ts';
+import { Storage } from '../lib/storage.ts';
+import { useTempDirs } from './helpers.ts';
 
 const makeTempDir = useTempDirs();
 
@@ -12,23 +14,24 @@ const NOW = new Date('2026-07-04T20:00:00.000Z');
 const PAGE_SIZE = 100;
 
 /** In-memory stand-in for the subset of Storage that BirdNetProvider uses. */
-const fakeStorage = ({ latestId = 0, speciesImages = [] } = {}) => {
+const fakeStorage = ({ latestId = 0, speciesImages = [] }: { latestId?: number; speciesImages?: Partial<SpeciesImageRow>[] } = {}) => {
   const images = new Map(speciesImages.map(img => [img.scientific_name, img]));
   let nextImageId = 100;
-  return {
+  const storage = {
     getLatestAudioDetectionId: vi.fn(() => latestId),
-    getSpeciesImage: vi.fn(name => images.get(name) ?? null),
-    addSpeciesImage: vi.fn((img) => {
+    getSpeciesImage: vi.fn((name: string) => images.get(name) ?? null),
+    addSpeciesImage: vi.fn((img: SpeciesImageInput) => {
       const row = { id: nextImageId++, ...img };
       images.set(img.scientific_name, row);
       return row.id;
     }),
-    addAudioIdentification: vi.fn(),
+    addAudioIdentification: vi.fn((_record: AudioIdentificationInput) => {}),
   };
+  return storage as typeof storage & Storage;
 };
 
 /** A BirdNET-Go detection as returned by /api/v2/detections. `minutesAgo` sets its timestamp relative to NOW. */
-const detection = (id, { minutesAgo = 10, ...overrides } = {}) => {
+const detection = (id: number, { minutesAgo = 10, ...overrides }: { minutesAgo?: number } & Partial<BirdNetDetection> = {}): BirdNetDetection => {
   const timestamp = new Date(NOW.getTime() - minutesAgo * 60_000);
   return {
     id,
@@ -50,8 +53,8 @@ const detection = (id, { minutesAgo = 10, ...overrides } = {}) => {
  * Stubs global fetch with a tiny router. `pages` are the /api/v2/detections
  * responses by offset; `failures` maps a URL path to an HTTP status to return.
  */
-const stubBirdNet = ({ pages = [], failures = {} } = {}) => {
-  const fetchMock = vi.fn(async (url) => {
+const stubBirdNet = ({ pages = [], failures = {} }: { pages?: { data: BirdNetDetection[]; total_pages?: number }[]; failures?: Record<string, number> } = {}) => {
+  const fetchMock = vi.fn(async (url: string) => {
     const { pathname, search, searchParams } = new URL(url);
     const urlPath = pathname + search;
     if (failures[urlPath]) {
@@ -73,12 +76,12 @@ const stubBirdNet = ({ pages = [], failures = {} } = {}) => {
   return fetchMock;
 };
 
-const fetchedPaths = (fetchMock) => fetchMock.mock.calls.map(([url]) => url.slice(BASE_URL.length));
+const fetchedPaths = (fetchMock: ReturnType<typeof stubBirdNet>) => fetchMock.mock.calls.map(([url]) => url.slice(BASE_URL.length));
 
 describe('BirdNetProvider', () => {
-  let downloadDir;
+  let downloadDir: string;
 
-  const makeProvider = (storage, overrides = {}) => new BirdNetProvider(storage, {
+  const makeProvider = (storage: Storage, overrides: Partial<BirdNetOptions> = {}) => new BirdNetProvider(storage, {
     baseUrl: BASE_URL,
     minConfidence: 0.7,
     lookbackHours: 48,
@@ -212,7 +215,7 @@ describe('BirdNetProvider', () => {
   });
 
   describe('paging', () => {
-    const pageOf = (ids, totalPages) => ({ data: ids.map(id => detection(id)), total_pages: totalPages });
+    const pageOf = (ids: number[], totalPages: number) => ({ data: ids.map(id => detection(id)), total_pages: totalPages });
 
     it('follows pages until total_pages is exhausted', async () => {
       const fetchMock = stubBirdNet({ pages: [pageOf([6, 5], 3), pageOf([4, 3], 3), pageOf([2, 1], 3)] });
@@ -328,7 +331,7 @@ describe('BirdNetProvider', () => {
         '/api/v2/audio/3',
       ]);
     } finally {
-      storage.provider.db.close();
+      (storage.provider as SQLiteStorage).db.close();
     }
   });
 });
