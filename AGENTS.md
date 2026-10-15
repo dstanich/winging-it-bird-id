@@ -55,7 +55,7 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   │   ├── images/                # Logo, favicons, GitHub mark, feeder photo
 │   │   └── downloads/             # Server's downloads/ dir must be available here (git-ignored; locally a symlink → ../../server/downloads you create yourself; volume mount in Docker)
 │   ├── data/                      # Committed symlink → ../server/data (so client/data/bird-data.db is the server's DB)
-│   ├── scripts/scheduled-publish/ # S3 deploy script (own package.json): build + upload + CloudFront invalidation, every 5h
+│   ├── scripts/scheduled-publish/ # S3 deploy script (own package.json): build + upload + CloudFront invalidation, every SCHEDULED_PUBLISH_INTERVAL_HOURS (default 5h)
 │   ├── .env.example
 │   └── Dockerfile                 # Container for scheduled S3 publishing
 ├── .github/workflows/
@@ -100,7 +100,7 @@ npm test                   # vitest run: the client test suite (npm run test:wat
 ### Scheduled publish (`cd client/scripts/scheduled-publish`)
 
 ```bash
-npm start                  # Build + publish immediately, then repeat every 5 hours (needs S3/AWS env vars)
+npm start                  # Build + publish immediately, then repeat every SCHEDULED_PUBLISH_INTERVAL_HOURS (default 5) hours (needs S3/AWS env vars)
 ```
 
 The server and client each have a Vitest suite (`server/test/`, `client/test/`); the publish script has no tests, and the server has no linter. Verify server changes with `npm test` (add/update tests alongside behavior changes) and, for loop/FTP wiring in `index.js`, by running `npm start` against a scratch `DATA_DIR`; verify client changes with `npm test`, `npm run lint`, and `npm run build` (add/update tests alongside changes to `lib/`, `clip-grid.tsx`, or `lightbox.tsx`).
@@ -169,7 +169,7 @@ The server and client each have a Vitest suite (`server/test/`, `client/test/`);
 - **Media paths** — the DB stores paths like `downloads/2026/7/4/1751652000.jpg` (relative to the server's working dir), and the client renders them as `/${path}`. So the server's `downloads/` directory must be exposed at `client/public/downloads/` (Docker volume mount in production); the publish script also copies `public/downloads` into `out/` explicitly.
 - **Species helpers** (`client/lib/species.ts`) — `isUnknownSpecies()`/`isKnownSpecies()`/`toTitleCase()` live here rather than in `db.ts` because `db.ts` imports `better-sqlite3` and can't be bundled into the client component.
 - **Data access** (`client/lib/db.ts`) — opens the SQLite DB read-only via `better-sqlite3` at build time, a fresh connection per query. Only rows newer than `RETENTION_DAYS` (default 60) are included. `getAvailableDates` unions dates from `clips` and `audio_identifications`; `getClipsForDate` joins identifications (ordered by `identifications.id` within a clip, so the first is the earliest-stored) and the model setting; `getAudioIdentificationsForDate` joins `species_images`. BirdNET-Go's `detected_at` carries a UTC offset (e.g. `-05:00`), so audio retention and ordering compare via SQLite `julianday()` rather than as strings; `getDateSummary` computes video (clips, birds, non-birds, most common — known bird species only, excluding non-birds and "unknown"/"unidentified" species, title-cased for display — busiest hour, unique species, which likewise excludes unknown species) and audio (detections, species heard, most common, busiest hour) stats; `getActiveSettings` backs the settings page (`ai_model`, `ai_prompt`, `ai_image_model`, `ai_image_prompt`); `getDailyImage(date)` returns the date's image path and species list (null if none, the date is before the retention cutoff day, or the DB predates the `daily_images` table). **All date bucketing and time display use the `America/Chicago` timezone**; dates are formatted with the `en-CA` locale to get `YYYY-MM-DD` URL paths. `formatDateHeading` anchors `YYYY-MM-DD` dates at UTC noon so the host time zone can't shift the day. Filtering by date happens in JS, not in SQL: `getClipsForDate`/`getAudioIdentificationsForDate` load the whole retention window once per build worker, bucket it by Chicago date, and serve every later call from that cache (skipped when `NODE_ENV` is `development`, so `next dev` sees new data). Don't go back to a full scan per call — the date cards call these for every date, and that made builds time out on real data. The `Intl.DateTimeFormat` formatters are module-level constants for the same reason (`toLocale*String()` builds a new one per call).
-- **Scheduled publishing** (`client/scripts/scheduled-publish/index.js`) — loop (immediately, then every 5 hours): `npm run build`, copy `public/downloads` into `out/`, upload changed files to S3 (skips unchanged via ETag/MD5 compare), delete S3 objects no longer in the build (skipped if fewer than 10 local files, guarding against a broken build wiping the bucket), then invalidate CloudFront `/*` if anything changed.
+- **Scheduled publishing** (`client/scripts/scheduled-publish/index.js`) — loop (immediately, then `SCHEDULED_PUBLISH_INTERVAL_HOURS` after each run finishes — default 5, fractional allowed; non-numeric, non-positive, or > ~24.8-day values log an error and use the default): `npm run build`, copy `public/downloads` into `out/`, upload changed files to S3 (skips unchanged via ETag/MD5 compare), delete S3 objects no longer in the build (skipped if fewer than 10 local files, guarding against a broken build wiping the bucket), then invalidate CloudFront `/*` if anything changed.
 
 ### Database Schema
 
@@ -192,7 +192,7 @@ Schema changes go in `SQLiteStorage._createSchema()`; existing databases need an
 Environment config via `.env` in each directory (see each `.env.example`):
 
 - **Server** — `GOOGLE_API_KEY`, `PROCESS_DELAY`; `CAMERA_NAME`, `CHECK_INTERVAL`, `DATA_DIR`, `DOWNLOAD_DIR`, `RETENTION_DAYS`, `DAILY_IMAGE_LOOKBACK_DAYS`, `VIDEO_COOLDOWN_SECONDS`; `UPLOAD_DIR`, `FTP_HOST`, `FTP_PORT`, `FTP_USERNAME`, `FTP_PASSWORD`, `FTP_PASV_URL`, `FTP_PASV_MIN`, `FTP_PASV_MAX`; `BIRDNET_ENABLED`, `BIRDNET_GO_URL`, `BIRDNET_MIN_CONFIDENCE`, `BIRDNET_LOOKBACK_HOURS`. `FTP_PASV_URL` must be the LAN IP of the host running the server (required for passive-mode transfers). `DOWNLOAD_DIR` has no code default (unlike `DATA_DIR` → `./data` and `UPLOAD_DIR` → `./uploads`), so `initializeApp()` throws if it's unset — keep it in `.env`.
-- **Client / publish** — `SCHEDULED_PUBLISH_CLIENT_DIR`, `SCHEDULED_PUBLISH_S3_BUCKET`, `SCHEDULED_PUBLISH_S3_PREFIX`, `SCHEDULED_PUBLISH_CLOUDFRONT_DISTRIBUTION_ID`, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_REGION`, `RETENTION_DAYS`, `CLOUDFLARE_ANALYTICS_TOKEN`.
+- **Client / publish** — `SCHEDULED_PUBLISH_CLIENT_DIR`, `SCHEDULED_PUBLISH_S3_BUCKET`, `SCHEDULED_PUBLISH_S3_PREFIX`, `SCHEDULED_PUBLISH_CLOUDFRONT_DISTRIBUTION_ID`, `SCHEDULED_PUBLISH_INTERVAL_HOURS`, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_REGION`, `RETENTION_DAYS`, `CLOUDFLARE_ANALYTICS_TOKEN`.
 
 When adding an env var, update the relevant `.env.example`, the README, and this file.
 
