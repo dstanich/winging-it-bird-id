@@ -1,4 +1,4 @@
-FROM node:20
+FROM node:24
 
 ####
 # The client Dockerfile is used for the scheduled publish script, which will pull in the client files and regularly builds it.

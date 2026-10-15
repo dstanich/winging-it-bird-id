@@ -25,6 +25,7 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   │   ├── sqlite-storage.ts      # SQLite implementation (implements StorageProvider): schema, seeding, migrations, queries
 │   │   └── types.ts               # Shared types: DB row shapes, Clip/DiscoveredClip, BirdIdentification, StorageProvider interface
 │   ├── scripts/seed-uploads.ts    # CLI for lib/seed-uploads.ts (npm run seed:uploads)
+│   ├── scripts/seed-ci-db.ts      # CI: creates DATA_DIR/bird-data.db with the real schema + fake rows so the client can build
 │   ├── test/                      # Vitest suite: one *.test.ts per lib/ module, plus setup.ts + helpers.ts
 │   ├── vitest.config.ts
 │   ├── tsconfig.json              # Type-check only (noEmit, erasableSyntaxOnly); Node runs the .ts files directly
@@ -60,12 +61,15 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   ├── scripts/scheduled-publish/ # S3 deploy script (own package.json): build + upload + CloudFront invalidation, every 5h
 │   ├── .env.example
 │   └── Dockerfile                 # Container for scheduled S3 publishing
+├── .github/workflows/
+│   ├── ci.yml                     # PR/push to main: server tests, client lint/test/build, publish-script check
+│   └── docker.yml                 # PR/push to main touching server/ or client/: builds both Docker images (no push)
 ├── test-birds/                    # Committed test media from the real feeder: images/ (bird photos + non*.jpg non-bird photos for seed:uploads), audio/ (wav clips)
 ├── .claude/
 │   ├── settings.json              # Shared Claude Code permissions (npm lint/build/install/ci + read-only git/sqlite allowed; .env reads denied)
 │   └── launch.json                # Claude Code preview config: client dev server on :3000
 ├── docker-compose.yml             # Production deploy: server + publish containers, external named volumes, env from server/.env + client/.env
-├── .nvmrc                         # lts/krypton (Node 24) for local dev; server image uses node:24-slim, client image node:20
+├── .nvmrc                         # lts/krypton (Node 24) for local dev; Docker images and CI also use Node 24
 ├── README.md                      # Human-facing setup docs (keep in sync with this file)
 ├── CLAUDE.md                      # Just `@./AGENTS.md`
 └── AGENTS.md
@@ -104,6 +108,13 @@ npm start                  # Build + publish immediately, then repeat every 5 ho
 ```
 
 The server and client each have a Vitest suite (`server/test/`, `client/test/`); the publish script has no tests, and the server has no linter. Verify server changes with `npm run typecheck` and `npm test` (add/update tests alongside behavior changes) and, for loop/FTP wiring in `index.ts`, by running `npm start` against a scratch `DATA_DIR`; verify client changes with `npm test`, `npm run lint`, and `npm run build` (add/update tests alongside changes to `lib/`, `clip-grid.tsx`, or `lightbox.tsx`).
+
+### CI (GitHub Actions)
+
+- `.github/workflows/ci.yml` runs on Node 24 (matching the Docker images and `.nvmrc`) on every PR to `main` and push to `main`, with no path filters (so its jobs can be required checks): `server` (`npm ci`, `npm run typecheck`, `npm test`), `client` (`npm ci`, `npm run lint`, `npm test`, then `npm run build`), and `publish-script` (`npm ci` + `node --check index.js`).
+- The client build needs `client/data/bird-data.db` (symlink → `server/data`), which CI doesn't have, so the `client` job runs `DATA_DIR=data node scripts/seed-ci-db.ts` in `server/` first. It creates the DB through `Storage` (so the schema is the real one) and adds two recent days of clips, audio detections, and one `daily_images` row, so `[date]` has static params to export. It refuses to run without `DATA_DIR` or when the DB already exists. If a schema change breaks the client build, update this script alongside `client/test/helpers.ts`.
+- `.github/workflows/docker.yml` builds `server/` and `client/` images with Buildx (GHA cache, never pushed), only when `server/**`, `client/**`, `docker-compose.yml`, or the workflow itself change — so it's not meant to be a required check.
+- Keep both green: anything that breaks `npm test`, `npm run lint`, or `npm run build` fails the PR. ESLint turns off `@next/next/no-html-link-for-pages` because plain `<a>` links are deliberate (static export).
 
 ### Test clips (no camera)
 
@@ -199,7 +210,7 @@ When adding an env var, update the relevant `.env.example`, the README, and this
 - BirdNET-Go audio sync is optional and entirely separate from FTP/video processing.
 - Client: Tailwind utility classes with `dark:` variants for every color (dark mode is supported everywhere); zinc palette, blue-600/blue-400 links. Path alias `@/*` → `client/`. Plain `<img>`/`<a>` tags are used deliberately (static export, no image optimization).
 - Server Dockerfile: `node:24-slim` (needed to run `.ts` directly) + build tools for `better-sqlite3`; `npm ci --omit=dev` (no TypeScript/test tooling in the image, since Node only strips types; `package.json` `engines` requires Node >= 24); declares volumes for `data/` and `downloads/` (`uploads/` isn't declared in the Dockerfile but is mounted by compose so failed clips survive recreates); exposes FTP control port `2121` and passive port range `30100-30110`.
-- Client Dockerfile: `node:20`; installs client + scheduled-publish deps, runs the publish script; volumes `/app/data` (DB) and `/app/public/downloads` (media).
+- Client Dockerfile: `node:24`; installs client + scheduled-publish deps, runs the publish script; volumes `/app/data` (DB) and `/app/public/downloads` (media).
 - Deployment: root `docker-compose.yml` runs both containers on one host (`git pull && docker compose up -d --build`). Env comes from `server/.env`/`client/.env` via `env_file` at container creation (`.dockerignore` keeps `.env` out of images), so `.env` edits only need `docker compose up -d`, not a rebuild. Volumes `birdid-data`, `birdid-downloads`, `birdid-uploads` are `external: true` (created once with `docker volume create`; compose never deletes them) Both services set `TZ=America/Chicago` in the compose file — the server needs it because Reolink filename timestamps are parsed in local time and the daily image's 7 AM completion boundary is local (the image defaults to UTC). The publish container mounts `birdid-data` read-write because WAL-mode SQLite readers write the `-shm` file. FTP port mappings are hard-coded and must match `FTP_PORT`/`FTP_PASV_MIN`/`FTP_PASV_MAX`.
 - Commit messages follow Conventional Commits with a scope, e.g. `fix(server): ...`, `feat(client): ...`, `docs: ...`, `chore: ...`.
 - When behavior changes, keep `README.md` and this file in sync (see "Keeping These Docs Current" above).
