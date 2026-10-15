@@ -114,6 +114,15 @@ The FTP port mappings in `docker-compose.yml` (`2121`, `30100-30110`) are fixed;
 
 **Migrating from hand-run containers:** remove the old containers with `docker rm -f <name>` (no `-v`, so the named volumes are kept), then run `docker compose up -d --build`. They must be removed first because they hold the FTP ports.
 
+## Continuous Integration
+
+GitHub Actions run on pull requests to `main` and on pushes to `main`:
+
+- **CI** (`.github/workflows/ci.yml`): `server` (`npm test` on Node 20 and 24), `client` (`npm run lint`, `npm test`, then `npm run build` against a small fake database created by `server/scripts/seed-ci-db.js`), and `publish-script` (`npm ci` + `node --check index.js`). These run on every PR, so they can be required in branch protection.
+- **Docker** (`.github/workflows/docker.yml`): builds the server and client images without pushing them, only when `server/`, `client/`, or `docker-compose.yml` change.
+
+To reproduce the client build check locally without real data: `cd server && DATA_DIR=/tmp/ci-data node scripts/seed-ci-db.js` (the script refuses to touch an existing database), then build against that directory.
+
 ## TODOs
 
 - [ ] TypeScript

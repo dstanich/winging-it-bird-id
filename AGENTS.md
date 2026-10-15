@@ -23,6 +23,7 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   │   ├── storage.js             # Storage facade (JSDoc'd interface)
 │   │   └── sqlite-storage.js      # SQLite implementation: schema, seeding, migrations, queries
 │   ├── scripts/seed-uploads.js    # CLI for lib/seed-uploads.js (npm run seed:uploads)
+│   ├── scripts/seed-ci-db.js      # CI: creates DATA_DIR/bird-data.db with the real schema + fake rows so the client can build
 │   ├── test/                      # Vitest suite: one *.test.js per lib/ module, plus setup.js + helpers.js
 │   ├── vitest.config.js
 │   ├── data/bird-data.db          # SQLite database (git-ignored)
@@ -57,6 +58,9 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   ├── scripts/scheduled-publish/ # S3 deploy script (own package.json): build + upload + CloudFront invalidation, every 5h
 │   ├── .env.example
 │   └── Dockerfile                 # Container for scheduled S3 publishing
+├── .github/workflows/
+│   ├── ci.yml                     # PR/push to main: server tests (Node 20+24), client lint/test/build, publish-script check
+│   └── docker.yml                 # PR/push to main touching server/ or client/: builds both Docker images (no push)
 ├── test-birds/                    # Committed test media from the real feeder: images/ (bird photos + non*.jpg non-bird photos for seed:uploads), audio/ (wav clips)
 ├── .claude/
 │   ├── settings.json              # Shared Claude Code permissions (npm lint/build/install/ci + read-only git/sqlite allowed; .env reads denied)
@@ -101,13 +105,20 @@ npm start                  # Build + publish immediately, then repeat every 5 ho
 
 The server and client each have a Vitest suite (`server/test/`, `client/test/`); the publish script has no tests, and the server has no linter. Verify server changes with `npm test` (add/update tests alongside behavior changes) and, for loop/FTP wiring in `index.js`, by running `npm start` against a scratch `DATA_DIR`; verify client changes with `npm test`, `npm run lint`, and `npm run build` (add/update tests alongside changes to `lib/`, `clip-grid.tsx`, or `lightbox.tsx`).
 
+### CI (GitHub Actions)
+
+- `.github/workflows/ci.yml` runs on every PR to `main` and push to `main`, with no path filters (so its jobs can be required checks): `server` (`npm ci` + `npm test`, Node 20 and 24 — Docker image and `.nvmrc`), `client` (`npm ci`, `npm run lint`, `npm test`, then `npm run build`), and `publish-script` (`npm ci` + `node --check index.js`).
+- The client build needs `client/data/bird-data.db` (symlink → `server/data`), which CI doesn't have, so the `client` job runs `DATA_DIR=data node scripts/seed-ci-db.js` in `server/` first. It creates the DB through `Storage` (so the schema is the real one) and adds two recent days of clips, audio detections, and one `daily_images` row, so `[date]` has static params to export. It refuses to run without `DATA_DIR` or when the DB already exists. If a schema change breaks the client build, update this script alongside `client/test/helpers.ts`.
+- `.github/workflows/docker.yml` builds `server/` and `client/` images with Buildx (GHA cache, never pushed), only when `server/**`, `client/**`, `docker-compose.yml`, or the workflow itself change — so it's not meant to be a required check.
+- Keep both green: anything that breaks `npm test`, `npm run lint`, or `npm run build` fails the PR. ESLint turns off `@next/next/no-html-link-for-pages` because plain `<a>` links are deliberate (static export).
+
 ### Test clips (no camera)
 
 `npm run seed:uploads [-- <count>]` (`scripts/seed-uploads.js` → `lib/seed-uploads.js`) picks `count` (default 5) random bird photos from `test-birds/images/` plus `max(1, floor(count / 3))` non-bird photos (filenames starting with `non`, e.g. `nonbird.jpg`; extra on top of `count`, skipped with a warning if none exist), shuffles them together, and encodes each as a 3-second still MP4 named `[CAMERA_NAME]_00_[YYYYMMDDHHMMSS].mp4` in `UPLOAD_DIR`. Within each pool, no photo repeats until every one has been used, then rounds are reshuffled. Timestamps end at "now" and step back by `max(300, VIDEO_COOLDOWN_SECONDS + 60)` seconds so the cooldown keeps them all. Files are written as `*.partial` and renamed, so a running server never sees half-written videos. The next tick processes them for real (Gemini calls included).
 
 ### Server tests
 
-- **Vitest 4** (not 5: Vitest 5 requires Node 22+, and the server Docker image is `node:20`). Config in `server/vitest.config.js`; `restoreMocks`, `unstubEnvs`, and `unstubGlobals` are on, so `vi.spyOn`/`vi.stubEnv`/`vi.stubGlobal` reset between tests.
+- **Vitest 4** (not 5: Vitest 5 requires Node 22+, and the server Docker image is `node:20`; CI also runs the suite on Node 20). Config in `server/vitest.config.js`; `restoreMocks`, `unstubEnvs`, and `unstubGlobals` are on, so `vi.spyOn`/`vi.stubEnv`/`vi.stubGlobal` reset between tests.
 - `test/setup.js` silences `console.log/warn/error` with spies before each test; assert on `console.*` to check logging.
 - `test/helpers.js`: `useTempDirs()` returns a temp-dir factory with automatic per-test cleanup; `reolinkTimestamp(date)` builds Reolink-style `YYYYMMDDHHMMSS` local-time strings.
 - Tests never touch real data or services: SQLite tests point `DATA_DIR` at a temp dir via `vi.stubEnv`; `@google/genai` and `ftp-srv` are replaced with `vi.mock`; BirdNET-Go is a stubbed global `fetch` router. `ftp-clips` tests generate a real 2-second video with the bundled `ffmpeg-static` binary and extract real thumbnails.
