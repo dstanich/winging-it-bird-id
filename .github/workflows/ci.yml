@@ -17,12 +17,7 @@ permissions:
 
 jobs:
   server:
-    name: server (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node: [20, 24] # Docker image / local dev (.nvmrc)
     defaults:
       run:
         working-directory: server
@@ -30,7 +25,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: ${{ matrix.node }}
+          node-version: 24
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
@@ -42,7 +37,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: |
             client/package-lock.json
@@ -72,7 +67,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: client/scripts/scheduled-publish/package-lock.json
       - run: npm ci
