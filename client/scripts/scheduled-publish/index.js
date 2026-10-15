@@ -13,8 +13,26 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url)); // workaround to get current directory in ES module context
 const CLIENT_DIR = process.env.SCHEDULED_PUBLISH_CLIENT_DIR || path.resolve(__dirname, "../..");
 const OUT_DIR = path.join(CLIENT_DIR, "out");
-const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+const DEFAULT_INTERVAL_HOURS = 5;
+const MAX_TIMEOUT_MS = 2 ** 31 - 1; // setTimeout fires immediately for longer delays (~24.8 days)
+const INTERVAL_MS = getIntervalMs();
 const MIN_FILES_FOR_DELETION = 10; // Minimum local file count required to allow S3 deletion. Guards against a broken build wiping the bucket.
+
+// Read SCHEDULED_PUBLISH_INTERVAL_HOURS (fractional hours allowed), falling back to the default if unset or invalid
+function getIntervalMs() {
+  const raw = process.env.SCHEDULED_PUBLISH_INTERVAL_HOURS;
+  if (!raw || raw.trim() === "") {
+    return DEFAULT_INTERVAL_HOURS * 60 * 60 * 1000;
+  }
+  const ms = Number(raw) * 60 * 60 * 1000;
+  if (!Number.isFinite(ms) || ms <= 0 || ms > MAX_TIMEOUT_MS) {
+    console.error(
+      `Invalid SCHEDULED_PUBLISH_INTERVAL_HOURS "${raw}". Using default of ${DEFAULT_INTERVAL_HOURS} hours.`
+    );
+    return DEFAULT_INTERVAL_HOURS * 60 * 60 * 1000;
+  }
+  return ms;
+}
 
 // Build Next.js app into static files
 function build() {
@@ -246,9 +264,9 @@ async function run() {
     await uploadToS3();
   }
 
-  const nextRun = new Date(Date.now() + FIVE_HOURS_MS);
+  const nextRun = new Date(Date.now() + INTERVAL_MS);
   console.log(`Next run scheduled for: ${nextRun.toISOString()}`);
-  setTimeout(run, FIVE_HOURS_MS);
+  setTimeout(run, INTERVAL_MS);
 }
 
 run();

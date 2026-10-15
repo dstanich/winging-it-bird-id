@@ -68,7 +68,7 @@ For building the static export and publishing it to production, see [Scheduled P
 
 `client/scripts/scheduled-publish/` is a standalone script that builds the client as a static site and publishes it to AWS S3 (with optional CloudFront cache invalidation) on a repeating schedule. It isn't needed for local development.
 
-**What it does:** on a loop (every 5 hours, starting immediately when launched) it runs `npm run build` in `client/`, copies `client/public/downloads` into the static export output, uploads changed files to S3 (comparing local file hashes against existing S3 object ETags to skip anything unchanged), deletes S3 objects that are no longer present locally (skipped if the local build has fewer than 10 files total, as a safety guard against a broken build wiping the bucket), and invalidates CloudFront if anything changed.
+**What it does:** on a loop (starting immediately when launched, then every `SCHEDULED_PUBLISH_INTERVAL_HOURS` hours, default 5, measured from the end of the previous run) it runs `npm run build` in `client/`, copies `client/public/downloads` into the static export output, uploads changed files to S3 (comparing local file hashes against existing S3 object ETags to skip anything unchanged), deletes S3 objects that are no longer present locally (skipped if the local build has fewer than 10 files total, as a safety guard against a broken build wiping the bucket), and invalidates CloudFront if anything changed.
 
 **Setup:**
 
@@ -79,9 +79,10 @@ For building the static export and publishing it to production, see [Scheduled P
    - `SCHEDULED_PUBLISH_CLOUDFRONT_DISTRIBUTION_ID` — optional; invalidation is skipped without it
    - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` — standard AWS credentials; needs S3 read/write/delete on the bucket and `cloudfront:CreateInvalidation` on the distribution
    - `SCHEDULED_PUBLISH_CLIENT_DIR` — optional override for the client directory (defaults to `client/`)
+   - `SCHEDULED_PUBLISH_INTERVAL_HOURS` — optional hours between runs (default `5`, fractional allowed; invalid values fall back to the default)
    - `RETENTION_DAYS` — default 60; how many days of dates the static build includes
    - `CLOUDFLARE_ANALYTICS_TOKEN` — optional; enables the analytics script tag in `client/app/layout.tsx`
-3. `cd client/scripts/scheduled-publish && npm start` — runs immediately, then repeats every 5 hours for as long as the process stays alive.
+3. `cd client/scripts/scheduled-publish && npm start` — runs immediately, then repeats every `SCHEDULED_PUBLISH_INTERVAL_HOURS` hours (default 5) for as long as the process stays alive.
 
 Alternatively, run via Docker: `client/Dockerfile` is built specifically for this job (installs both the client and scheduled-publish dependencies, and runs the publish script). It expects volumes at `/app/data` (the SQLite database the server produces) and `/app/public/downloads` (thumbnails), plus the same environment variables passed in. It is not used for local `npm run dev`. The root `docker-compose.yml` wires this up alongside the server — see [Deploying with Docker](#deploying-with-docker).
 
