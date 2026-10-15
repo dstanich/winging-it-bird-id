@@ -4,6 +4,8 @@
  */
 
 import * as fs from 'fs';
+import type { AIProvider } from './ai-provider.ts';
+import type { Clip } from './types.ts';
 
 /**
  * Discards clips whose timestamp falls within cooldownSeconds after the
@@ -17,21 +19,21 @@ import * as fs from 'fs';
  * failed, or a late backlog upload) aren't measured against it, so they aren't
  * discarded - nor checked against older stored clips, which aren't known here.
  *
- * @param {Array} clips - Newly discovered clips (unsorted).
- * @param {number|null} lastProcessedMs - Epoch ms of the last processed clip, seeded from storage, or null if none yet.
- * @param {number} cooldownSeconds - Cooldown window; 0 disables the filter.
- * @returns {Array} Clips to actually process (chronological order when the filter is enabled).
+ * @param clips - Newly discovered clips (unsorted).
+ * @param lastProcessedMs - Epoch ms of the last processed clip, seeded from storage, or null if none yet.
+ * @param cooldownSeconds - Cooldown window; 0 disables the filter.
+ * @returns Clips to actually process (chronological order when the filter is enabled).
  */
-export function applyCooldown(clips, lastProcessedMs, cooldownSeconds) {
+export function applyCooldown(clips: Clip[], lastProcessedMs: number | null, cooldownSeconds: number): Clip[] {
   if (!cooldownSeconds) return clips;
 
   const sorted = [...clips].sort((a, b) => a.id - b.id);
-  const kept = [];
-  let lastKeptMs = null;
+  const kept: Clip[] = [];
+  let lastKeptMs: number | null = null;
 
   for (const clip of sorted) {
     const clipMs = clip.id * 1000;
-    const earlier = [lastKeptMs, lastProcessedMs].filter(ms => ms !== null && ms <= clipMs);
+    const earlier = [lastKeptMs, lastProcessedMs].filter((ms): ms is number => ms !== null && ms <= clipMs);
     const lastMs = earlier.length ? Math.max(...earlier) : null;
     if (lastMs !== null && clipMs - lastMs < cooldownSeconds * 1000) {
       const diffSeconds = ((clipMs - lastMs) / 1000).toFixed(1);
@@ -57,19 +59,17 @@ export function applyCooldown(clips, lastProcessedMs, cooldownSeconds) {
  * Process clips: identify birds using AI. Each successful clip gets its
  * birdIdentification set; failed clips are logged and left out of the result.
  *
- * @param {Array} clips
- * @param {import('./ai-provider.js').AIProvider} aiProvider
- * @param {number|string} delayMs - Delay after each AI call (successful or not), to avoid rate limits.
- * @returns {Promise<Array>} Successfully processed clips.
+ * @param delayMs - Delay after each AI call (successful or not), to avoid rate limits.
+ * @returns Successfully processed clips.
  */
-export async function processClips(clips, aiProvider, delayMs) {
-  const successfulClips = [];
+export async function processClips(clips: Clip[], aiProvider: AIProvider, delayMs: number): Promise<Clip[]> {
+  const successfulClips: Clip[] = [];
   for (const clip of clips) {
     try {
       // Bird ID processing
       const { id, localThumbnailPath } = clip;
       console.log(`\nProcessing clip ${id} with thumbnail at ${localThumbnailPath}`);
-      const aiResponse = await aiProvider.identifyBird(clip, localThumbnailPath);
+      const aiResponse = await aiProvider.identifyBird(clip, localThumbnailPath!);
       clip.birdIdentification = aiResponse;
       successfulClips.push(clip);
       console.log(`✓ Processed clip ${id} successfully`);

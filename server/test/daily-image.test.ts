@@ -6,8 +6,11 @@ import {
   generateDailyImages,
   localDateString,
   mergeSpecies,
-} from '../lib/daily-image.js';
-import { useTempDirs } from './helpers.js';
+} from '../lib/daily-image.ts';
+import { useTempDirs } from './helpers.ts';
+import type { AIProvider } from '../lib/ai-provider.ts';
+import type { Storage } from '../lib/storage.ts';
+import type { BirdSpecies, DailyImageInput } from '../lib/types.ts';
 
 const makeTempDir = useTempDirs();
 
@@ -36,7 +39,7 @@ describe('mergeSpecies', () => {
 });
 
 describe('completedDays', () => {
-  const dates = (now, lookback) => completedDays(now, lookback).map(localDateString);
+  const dates = (now: Date, lookback: number) => completedDays(now, lookback).map(localDateString);
 
   it('excludes yesterday before 7 AM today', () => {
     expect(dates(new Date(2026, 6, 15, 6, 59, 59), 3)).toEqual(['2026-07-12', '2026-07-13']);
@@ -67,28 +70,32 @@ describe('completedDays', () => {
 describe('generateDailyImages', () => {
   // Local 8 AM on July 15: July 12-14 are complete with a 3-day lookback.
   const NOW = new Date(2026, 6, 15, 8, 0, 0);
-  let downloadDir;
+  let downloadDir: string;
 
   /**
    * In-memory storage fake. speciesByDate maps YYYY-MM-DD (local start of the
    * queried range) to { video, audio }.
    */
-  const fakeStorage = ({ speciesByDate = {}, existing = [] } = {}) => {
-    const rows = new Map(existing.map(date => [date, { date }]));
-    return {
+  const fakeStorage = ({ speciesByDate = {}, existing = [] }: { speciesByDate?: Record<string, BirdSpecies>; existing?: string[] } = {}) => {
+    const rows = new Map<string, Partial<DailyImageInput>>(existing.map(date => [date, { date }]));
+    const storage = {
       rows,
-      getDailyImage: vi.fn(date => rows.get(date) ?? null),
-      addDailyImage: vi.fn(image => { rows.set(image.date, image); return rows.size; }),
-      getBirdSpeciesBetween: vi.fn((startIso) =>
+      getDailyImage: vi.fn((date: string) => rows.get(date) ?? null),
+      addDailyImage: vi.fn((image: DailyImageInput) => { rows.set(image.date, image); return rows.size; }),
+      getBirdSpeciesBetween: vi.fn((startIso: string) =>
         speciesByDate[localDateString(new Date(startIso))] ?? { video: [], audio: [] }),
     };
+    return storage as typeof storage & Storage;
   };
 
-  const fakeAi = () => ({
-    generateImage: vi.fn().mockResolvedValue({ data: PNG_BYTES, mimeType: 'image/png', ai_model_id: 5, ai_prompt_id: 6 }),
-  });
+  const fakeAi = () => {
+    const ai = {
+      generateImage: vi.fn().mockResolvedValue({ data: PNG_BYTES, mimeType: 'image/png', ai_model_id: 5, ai_prompt_id: 6 }),
+    };
+    return ai as typeof ai & AIProvider;
+  };
 
-  const run = (storage, aiProvider, lookbackDays = 3) =>
+  const run = (storage: Storage, aiProvider: AIProvider, lookbackDays = 3) =>
     generateDailyImages(storage, aiProvider, { downloadDir, lookbackDays, delayMs: 0 });
 
   beforeEach(() => {

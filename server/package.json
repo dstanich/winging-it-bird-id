@@ -5,13 +5,14 @@
   "license": "MIT",
   "author": "David Stanich",
   "type": "module",
-  "main": "index.js",
+  "main": "index.ts",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
-    "start": "node index.js",
-    "seed:uploads": "node scripts/seed-uploads.js",
+    "start": "node index.ts",
+    "seed:uploads": "node scripts/seed-uploads.ts",
+    "typecheck": "tsc",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -24,6 +25,10 @@
     "ftp-srv": "^4.6.3"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/fluent-ffmpeg": "^2.1.28",
+    "@types/node": "^24.19.2",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   }
 }

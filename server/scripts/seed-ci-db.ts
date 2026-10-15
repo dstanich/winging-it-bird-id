@@ -2,7 +2,7 @@
  * Create a small SQLite database with the real server schema and a few rows of
  * fake data, so the client can be built without a real camera/database (CI).
  *
- * Usage: DATA_DIR=<dir> node scripts/seed-ci-db.js
+ * Usage: DATA_DIR=<dir> node scripts/seed-ci-db.ts
  *
  * Writes <DATA_DIR>/bird-data.db. Refuses to run without DATA_DIR or when the
  * database already exists, so it can never add fake rows to real data.
@@ -11,7 +11,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Storage } from '../lib/storage.js';
+import { Storage } from '../lib/storage.ts';
+import type { BirdIdentification } from '../lib/types.ts';
 
 const dataDir = process.env.DATA_DIR;
 if (!dataDir) {
@@ -45,10 +46,11 @@ days.forEach((day, i) => {
   const nonBirdTime = new Date(day.getTime() + 15 * 60 * 1000);
   const ymd = `${day.getUTCFullYear()}/${day.getUTCMonth() + 1}/${day.getUTCDate()}`;
 
-  for (const [time, identification] of [
+  const clips: [Date, BirdIdentification][] = [
     [birdTime, { is_bird: true, species: 'northern cardinal', gender: 'male', count: 1, confidence: 0.92 }],
     [nonBirdTime, { is_bird: false, non_bird_species: 'squirrel', confidence: 0.88 }],
-  ]) {
+  ];
+  for (const [time, identification] of clips) {
     const id = Math.floor(time.getTime() / 1000);
     storage.addClip({
       id,

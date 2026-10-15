@@ -2,15 +2,19 @@ import * as fs from 'fs';
 import * as path from 'path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SQLiteStorage } from '../lib/sqlite-storage.js';
-import { DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_PROMPT, DEFAULT_MODEL, DEFAULT_PROMPT } from '../lib/ai-provider.js';
-import { useTempDirs } from './helpers.js';
+import { SQLiteStorage } from '../lib/sqlite-storage.ts';
+import { DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_PROMPT, DEFAULT_MODEL, DEFAULT_PROMPT } from '../lib/ai-provider.ts';
+import { useTempDirs } from './helpers.ts';
+import type { BirdIdentification } from '../lib/types.ts';
 
 const makeTempDir = useTempDirs();
 
+/** A raw row read straight from the database in a test. */
+type Row = Record<string, any>;
+
 describe('SQLiteStorage', () => {
-  let dataDir;
-  let storage;
+  let dataDir: string;
+  let storage: SQLiteStorage;
 
   const openStorage = () => {
     storage = new SQLiteStorage();
@@ -24,11 +28,11 @@ describe('SQLiteStorage', () => {
 
   afterEach(() => {
     storage?.db.close();
-    storage = undefined;
+    storage = undefined as unknown as SQLiteStorage;
   });
 
-  const clipRows = () => storage.db.prepare('SELECT * FROM clips ORDER BY id').all();
-  const identRows = () => storage.db.prepare('SELECT * FROM identifications ORDER BY id').all();
+  const clipRows = () => storage.db.prepare('SELECT * FROM clips ORDER BY id').all() as Row[];
+  const identRows = () => storage.db.prepare('SELECT * FROM identifications ORDER BY id').all() as Row[];
 
   describe('initialization', () => {
     it('creates DATA_DIR and the database file if missing', () => {
@@ -45,9 +49,9 @@ describe('SQLiteStorage', () => {
 
     it('creates all tables', () => {
       openStorage();
-      const tables = storage.db
+      const tables = (storage.db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
-        .all()
+        .all() as Row[])
         .map(r => r.name);
       expect(tables).toEqual(expect.arrayContaining([
         'clips', 'identifications', 'settings', 'species_images', 'audio_identifications', 'daily_images',
@@ -91,7 +95,7 @@ describe('SQLiteStorage', () => {
   });
 
   describe('legacy identifications.model migration', () => {
-    const createLegacyDb = ({ withSettings }) => {
+    const createLegacyDb = ({ withSettings }: { withSettings: boolean }) => {
       fs.mkdirSync(dataDir, { recursive: true });
       const db = new Database(path.join(dataDir, 'bird-data.db'));
       db.exec(`
@@ -129,7 +133,7 @@ describe('SQLiteStorage', () => {
     it('drops the model column and adds ai_model_id/ai_prompt_id', () => {
       createLegacyDb({ withSettings: true });
       openStorage();
-      const columns = storage.db.pragma('table_info(identifications)').map(c => c.name);
+      const columns = (storage.db.pragma('table_info(identifications)') as Row[]).map(c => c.name);
       expect(columns).not.toContain('model');
       expect(columns).toEqual(expect.arrayContaining(['ai_model_id', 'ai_prompt_id']));
     });
@@ -137,7 +141,7 @@ describe('SQLiteStorage', () => {
     it('backfills ai_model_id by matching model text and ai_prompt_id with the active prompt', () => {
       createLegacyDb({ withSettings: true });
       openStorage();
-      const settingId = (name, value) => storage.getSettings(name).find(s => s.value === value).id;
+      const settingId = (name: string, value: string) => storage.getSettings(name).find(s => s.value === value)!.id;
 
       const rows = identRows();
       expect(rows).toHaveLength(3);
@@ -159,7 +163,7 @@ describe('SQLiteStorage', () => {
       createLegacyDb({ withSettings: false });
       openStorage();
       const rows = identRows();
-      const seededModelId = storage.getSettingWithId('ai_model').id;
+      const seededModelId = storage.getSettingWithId('ai_model')!.id;
       expect(rows[0].ai_model_id).toBe(seededModelId); // matches the freshly seeded default model
       expect(rows[1].ai_model_id).toBeNull(); // 'some-retired-model' isn't in settings
     });
@@ -168,7 +172,7 @@ describe('SQLiteStorage', () => {
       createLegacyDb({ withSettings: true });
       openStorage();
       const before = identRows();
-      const indexes = storage.db.pragma('index_list(identifications)').map(i => i.name);
+      const indexes = (storage.db.pragma('index_list(identifications)') as Row[]).map(i => i.name);
       expect(indexes).toContain('idx_identifications_species');
       storage.db.close();
 
@@ -192,10 +196,10 @@ describe('SQLiteStorage', () => {
 
     it('setSetting inserts inactive by default and coerces isActive to 0/1', () => {
       storage.setSetting('ai_model', 'inactive-model');
-      storage.setSetting('ai_model', 'truthy-model', 'yes');
+      storage.setSetting('ai_model', 'truthy-model', true);
       const rows = storage.getSettings('ai_model');
-      expect(rows.find(r => r.value === 'inactive-model').is_active).toBe(0);
-      expect(rows.find(r => r.value === 'truthy-model').is_active).toBe(1);
+      expect(rows.find(r => r.value === 'inactive-model')!.is_active).toBe(0);
+      expect(rows.find(r => r.value === 'truthy-model')!.is_active).toBe(1);
     });
 
     it('setSetting returns the insert result', () => {
@@ -205,7 +209,7 @@ describe('SQLiteStorage', () => {
     });
 
     it('supports versioning by flipping is_active between rows', () => {
-      const original = storage.getSettingWithId('ai_model');
+      const original = storage.getSettingWithId('ai_model')!;
       const { lastInsertRowid } = storage.setSetting('ai_model', 'gemini-next');
       storage.updateSetting(original.id, { isActive: false });
       storage.updateSetting(Number(lastInsertRowid), { isActive: true });
@@ -215,7 +219,7 @@ describe('SQLiteStorage', () => {
     });
 
     it('updateSetting updates only the provided fields', () => {
-      const { id } = storage.getSettingWithId('ai_prompt');
+      const { id } = storage.getSettingWithId('ai_prompt')!;
       storage.updateSetting(id, { value: 'new prompt' });
       expect(storage.getSettings('ai_prompt')[0]).toMatchObject({ value: 'new prompt', is_active: 1 });
     });
@@ -280,8 +284,8 @@ describe('SQLiteStorage', () => {
     });
 
     it('stores an array of identifications, one row per species', () => {
-      const modelId = storage.getSettingWithId('ai_model').id;
-      const promptId = storage.getSettingWithId('ai_prompt').id;
+      const modelId = storage.getSettingWithId('ai_model')!.id;
+      const promptId = storage.getSettingWithId('ai_prompt')!.id;
       storage.addClip({
         ...baseClip,
         birdIdentification: [
@@ -386,7 +390,7 @@ describe('SQLiteStorage', () => {
   describe('audio identifications and species images', () => {
     beforeEach(() => openStorage());
 
-    const audioRows = () => storage.db.prepare('SELECT * FROM audio_identifications ORDER BY id').all();
+    const audioRows = () => storage.db.prepare('SELECT * FROM audio_identifications ORDER BY id').all() as Row[];
 
     const detection = (overrides = {}) => ({
       birdnet_detection_id: 42,
@@ -498,7 +502,7 @@ describe('SQLiteStorage', () => {
 
     it('addSpeciesImage stores a missing common_name as NULL', () => {
       storage.addSpeciesImage({ scientific_name: 'Turdus migratorius', local_path: 'p.jpg' });
-      expect(storage.getSpeciesImage('Turdus migratorius').common_name).toBeNull();
+      expect(storage.getSpeciesImage('Turdus migratorius')!.common_name).toBeNull();
     });
 
     it('addSpeciesImage rejects a duplicate scientific_name', () => {
@@ -510,15 +514,15 @@ describe('SQLiteStorage', () => {
   describe('daily images', () => {
     beforeEach(() => openStorage());
 
-    const dailyRows = () => storage.db.prepare('SELECT * FROM daily_images ORDER BY date').all();
+    const dailyRows = () => storage.db.prepare('SELECT * FROM daily_images ORDER BY date').all() as Row[];
 
     it('getDailyImage returns null for a date without a row', () => {
       expect(storage.getDailyImage('2026-07-04')).toBeNull();
     });
 
     it('addDailyImage stores the species as JSON and getDailyImage finds it', () => {
-      const model = storage.getSettingWithId('ai_image_model');
-      const prompt = storage.getSettingWithId('ai_image_prompt');
+      const model = storage.getSettingWithId('ai_image_model')!;
+      const prompt = storage.getSettingWithId('ai_image_prompt')!;
       vi.useFakeTimers({ toFake: ['Date'] });
       vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'));
       let id;
@@ -566,10 +570,10 @@ describe('SQLiteStorage', () => {
       const START = '2026-07-04T05:00:00.000Z';
       const END = '2026-07-05T05:00:00.000Z';
 
-      const addClip = (id, createdAt, identifications) =>
+      const addClip = (id: number, createdAt: string, identifications: BirdIdentification[]) =>
         storage.addClip({ id, created_at: createdAt, birdIdentification: identifications });
 
-      const addAudio = (id, species, detectedAt) =>
+      const addAudio = (id: number, species: string | null, detectedAt: string) =>
         storage.addAudioIdentification({ birdnet_detection_id: id, species, detected_at: detectedAt });
 
       it('returns distinct bird species from clips and audio within [start, end)', () => {

@@ -1,18 +1,20 @@
 import * as path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Storage } from '../lib/storage.js';
-import { SQLiteStorage } from '../lib/sqlite-storage.js';
-import { useTempDirs } from './helpers.js';
+import { Storage } from '../lib/storage.ts';
+import { SQLiteStorage } from '../lib/sqlite-storage.ts';
+import { useTempDirs } from './helpers.ts';
+
+type Method = keyof Storage & keyof SQLiteStorage;
 
 const makeTempDir = useTempDirs();
 
-const facadeMethods = Object.getOwnPropertyNames(Storage.prototype).filter(name => name !== 'constructor');
+const facadeMethods = Object.getOwnPropertyNames(Storage.prototype).filter(name => name !== 'constructor') as Method[];
 
 describe('Storage facade', () => {
-  let storage;
+  let storage: Storage | undefined;
 
   afterEach(() => {
-    storage?.provider.db?.close();
+    (storage?.provider as SQLiteStorage | undefined)?.db?.close();
     storage = undefined;
   });
 
@@ -24,7 +26,7 @@ describe('Storage facade', () => {
 
   // Representative arguments for each facade method. Adding a method to the
   // facade without adding it here fails the coverage test below.
-  const callArgs = {
+  const callArgs: Record<Method, unknown[]> = {
     addClip: [{ id: 1 }],
     commit: [],
     data: ['2026-01-01T00:00:00.000Z'],

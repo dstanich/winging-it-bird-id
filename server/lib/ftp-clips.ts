@@ -7,10 +7,12 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import ffmpegPath from 'ffmpeg-static';
 import ffmpeg from 'fluent-ffmpeg';
+import { FFMPEG_PATH } from './ffmpeg-path.ts';
+import type { Storage } from './storage.ts';
+import type { DiscoveredClip } from './types.ts';
 
-ffmpeg.setFfmpegPath(ffmpegPath);
+ffmpeg.setFfmpegPath(FFMPEG_PATH);
 
 const VIDEO_EXTENSIONS = new Set(['mp4', '264', '265', 'h264', 'h265']);
 
@@ -21,26 +23,22 @@ const TIMESTAMP_PATTERN = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/;
 
 /**
  * Parse a YYYYMMDDHHMMSS string into a local-time Date.
- * @param {string} timestamp
- * @returns {Date}
  */
-function parseLocalTimestamp(timestamp) {
+function parseLocalTimestamp(timestamp: string): Date {
   // Done dependency-free to avoid pulling in moment.js or similar just for this.
   // Date() doesn't recognize YYYYMMDDHHMMSS, so we have to parse it manually and construct a Date.
-  const [, year, month, day, hour, minute, second] = timestamp.match(TIMESTAMP_PATTERN).map(Number);
+  const [, year, month, day, hour, minute, second] = timestamp.match(TIMESTAMP_PATTERN)!.map(Number) as number[];
   return new Date(year, month - 1, day, hour, minute, second);
 }
 
 /**
  * Recursively list video files (one level of subdirectory nesting) under uploadDir.
- * @param {string} uploadDir
- * @returns {Array<{ filePath: string, fileName: string }>}
  */
-function listVideoFiles(uploadDir) {
-  const results = [];
+function listVideoFiles(uploadDir: string): { filePath: string; fileName: string }[] {
+  const results: { filePath: string; fileName: string }[] = [];
   if (!fs.existsSync(uploadDir)) return results;
 
-  const walk = (dir, depth) => {
+  const walk = (dir: string, depth: number) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const entryPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -62,15 +60,11 @@ function listVideoFiles(uploadDir) {
  * falling back to file mtime + a default camera name if it doesn't match the
  * expected Reolink FTP convention.
  *
- * @param {string} filePath
- * @param {string} fileName
- * @param {string} defaultCameraName
- * @returns {{ cameraName: string, timestamp: Date }}
  */
-function parseClipMetadata(filePath, fileName, defaultCameraName) {
+function parseClipMetadata(filePath: string, fileName: string, defaultCameraName: string | undefined): { cameraName: string | undefined; timestamp: Date } {
   const match = fileName.match(FILENAME_PATTERN);
   if (match) {
-    const [, cameraName, , timestampStr] = match;
+    const [, cameraName, , timestampStr] = match as [string, string, string, string];
     return { cameraName, timestamp: parseLocalTimestamp(timestampStr) };
   }
 
@@ -80,19 +74,16 @@ function parseClipMetadata(filePath, fileName, defaultCameraName) {
 
 /**
  * Extract a single JPEG frame from a video file, unless the thumbnail already exists.
- * @param {string} videoPath
- * @param {string} thumbnailPath
- * @returns {Promise<void>}
  */
-function extractThumbnail(videoPath, thumbnailPath) {
+function extractThumbnail(videoPath: string, thumbnailPath: string): Promise<void> {
   if (fs.existsSync(thumbnailPath)) {
     return Promise.resolve();
   }
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     // A fixed offset (rather than a "50%" timestamp) avoids fluent-ffmpeg's
     // duration probe, which requires ffprobe - a binary ffmpeg-static doesn't bundle.
     ffmpeg(videoPath)
-      .on('end', resolve)
+      .on('end', () => resolve())
       .on('error', reject)
       .screenshots({
         timestamps: [1],
@@ -104,9 +95,8 @@ function extractThumbnail(videoPath, thumbnailPath) {
 
 /**
  * Delete an uploaded video that won't be processed, logging (not throwing) on failure.
- * @param {string} filePath
  */
-function removeUpload(filePath) {
+function removeUpload(filePath: string): void {
   try {
     fs.rmSync(filePath, { force: true });
   } catch (error) {
@@ -124,19 +114,16 @@ function removeUpload(filePath) {
  * channels recording in the same second) - the first one that yields a
  * clip wins.
  *
- * @param {Object} storage
- * @param {string} uploadDir
- * @param {string} downloadDir
- * @param {string} defaultCameraName - fallback device_name if filename doesn't match the expected pattern
- * @returns {Promise<Array>} new clips, each with localThumbnailPath/localVideoPath set
+ * @param defaultCameraName - fallback device_name if filename doesn't match the expected pattern
+ * @returns new clips, each with localThumbnailPath/localVideoPath set
  */
-export async function discoverNewClips(storage, uploadDir, downloadDir, defaultCameraName) {
+export async function discoverNewClips(storage: Pick<Storage, 'data'>, uploadDir: string, downloadDir: string, defaultCameraName: string | undefined): Promise<DiscoveredClip[]> {
   const files = listVideoFiles(uploadDir);
   console.log(`✓ Found ${files.length} uploaded video file(s)`);
 
   const processedIds = storage.data();
-  const seenIds = new Set();
-  const clips = [];
+  const seenIds = new Set<number>();
+  const clips: DiscoveredClip[] = [];
 
   for (const { filePath, fileName } of files) {
     try {

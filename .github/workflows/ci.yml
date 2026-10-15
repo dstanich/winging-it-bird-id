@@ -1,4 +1,4 @@
-# Required checks for PRs into main: server tests, client lint/test/build, publish script sanity check.
+# Required checks for PRs into main: server typecheck/tests, client lint/test/build, publish script sanity check.
 # No path filters on purpose: required checks that never run would block merging.
 name: CI
 
@@ -29,6 +29,7 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
+      - run: npm run typecheck
       - run: npm test
 
   client:
@@ -51,7 +52,7 @@ jobs:
       # The build reads client/data/bird-data.db (symlink → server/data), so create one with the real schema
       - run: npm ci --omit=dev
         working-directory: server
-      - run: node scripts/seed-ci-db.js
+      - run: node scripts/seed-ci-db.ts
         working-directory: server
         env:
           DATA_DIR: data

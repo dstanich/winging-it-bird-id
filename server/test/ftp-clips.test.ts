@@ -2,24 +2,25 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import ffmpegPath from 'ffmpeg-static';
+import { FFMPEG_PATH } from '../lib/ffmpeg-path.ts';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { discoverNewClips } from '../lib/ftp-clips.js';
-import { reolinkTimestamp, useTempDirs } from './helpers.js';
+import { discoverNewClips } from '../lib/ftp-clips.ts';
+import { reolinkTimestamp, useTempDirs } from './helpers.ts';
 
 // Wrap the real rmSync/readdirSync so tests can make deleting an upload fail,
 // or pin the directory listing order (which is filesystem-dependent).
 vi.mock('fs', async (importOriginal) => {
-  const actual = await importOriginal();
+  const actual = await importOriginal<typeof import('fs')>();
   return { ...actual, rmSync: vi.fn(actual.rmSync), readdirSync: vi.fn(actual.readdirSync) };
 });
 
-const actualFs = await vi.importActual('fs');
+const actualFs = await vi.importActual<typeof import('fs')>('fs');
 
 /** Makes the next readdirSync call list entries in the given name order. */
-const forceListingOrder = (names) => {
-  vi.mocked(fs.readdirSync).mockImplementationOnce((dir, options) =>
-    actualFs.readdirSync(dir, options).sort((a, b) => names.indexOf(a.name) - names.indexOf(b.name)));
+const forceListingOrder = (names: string[]) => {
+  // discoverNewClips only uses the withFileTypes overload.
+  vi.mocked(fs.readdirSync).mockImplementationOnce(((dir: fs.PathLike, options: { withFileTypes: true }) =>
+    actualFs.readdirSync(dir, options).sort((a, b) => names.indexOf(a.name) - names.indexOf(b.name))) as unknown as typeof fs.readdirSync);
 };
 
 const makeTempDir = useTempDirs();
@@ -30,15 +31,15 @@ const fakeStorage = (processedIds = {}) => ({ data: vi.fn().mockReturnValue(proc
 
 describe('discoverNewClips', () => {
   // A real 2-second video, generated once with the bundled ffmpeg binary.
-  let fixturesDir;
-  let sampleVideo;
-  let uploadDir;
-  let downloadDir;
+  let fixturesDir: string;
+  let sampleVideo: string;
+  let uploadDir: string;
+  let downloadDir: string;
 
   beforeAll(() => {
     fixturesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'winging-it-fixture-'));
     sampleVideo = path.join(fixturesDir, 'sample.mp4');
-    execFileSync(ffmpegPath, [
+    execFileSync(FFMPEG_PATH, [
       '-loglevel', 'error',
       '-f', 'lavfi', '-i', 'testsrc=duration=2:size=64x48:rate=5',
       '-pix_fmt', 'yuv420p',
@@ -58,7 +59,7 @@ describe('discoverNewClips', () => {
   });
 
   /** Copies the sample video into the upload dir under the given relative name. */
-  const upload = (relativeName) => {
+  const upload = (relativeName: string) => {
     const dest = path.join(uploadDir, relativeName);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.copyFileSync(sampleVideo, dest);
@@ -66,16 +67,16 @@ describe('discoverNewClips', () => {
   };
 
   /** Writes a non-video file with a video extension, which ffmpeg cannot decode. */
-  const uploadCorrupt = (relativeName) => {
+  const uploadCorrupt = (relativeName: string) => {
     const dest = path.join(uploadDir, relativeName);
     fs.writeFileSync(dest, 'not a video');
     return dest;
   };
 
-  const expectedThumbnailPath = (date, id) =>
+  const expectedThumbnailPath = (date: Date, id: number) =>
     path.join(downloadDir, `${date.getFullYear()}`, `${date.getMonth() + 1}`, `${date.getDate()}`, `${id}.jpg`);
 
-  const isJpeg = (file) => fs.readFileSync(file).subarray(0, 3).equals(JPEG_MAGIC);
+  const isJpeg = (file: string) => fs.readFileSync(file).subarray(0, 3).equals(JPEG_MAGIC);
 
   it('returns no clips when the upload dir does not exist', async () => {
     const clips = await discoverNewClips(fakeStorage(), path.join(uploadDir, 'missing'), downloadDir, 'Default');
@@ -243,7 +244,7 @@ describe('discoverNewClips', () => {
     const clips = await discoverNewClips(fakeStorage(), uploadDir, downloadDir, 'Default');
 
     expect(clips.map(c => c.device_name).sort()).toEqual(['nested', 'top']);
-    expect(clips.find(c => c.device_name === 'nested').localVideoPath)
+    expect(clips.find(c => c.device_name === 'nested')?.localVideoPath)
       .toBe(path.join(uploadDir, 'sub', 'nested_00_20260704080002.mp4'));
   });
 

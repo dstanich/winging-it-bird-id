@@ -11,7 +11,7 @@
 import 'dotenv/config';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { seedUploads } from '../lib/seed-uploads.js';
+import { seedUploads } from '../lib/seed-uploads.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -31,11 +31,11 @@ try {
     uploadDir: process.env.UPLOAD_DIR || './uploads',
     count,
     cameraName: process.env.CAMERA_NAME || 'Bird',
-    cooldownSeconds: parseInt(process.env.VIDEO_COOLDOWN_SECONDS || 0),
+    cooldownSeconds: parseInt(process.env.VIDEO_COOLDOWN_SECONDS || '0'),
   });
   const nonBirds = results.filter(r => !r.isBird).length;
   console.log(`✓ Seeded ${results.length} clip(s): ${results.length - nonBirds} bird, ${nonBirds} non-bird`);
 } catch (err) {
-  console.error('Failed to seed uploads:', err.message);
+  console.error('Failed to seed uploads:', err instanceof Error ? err.message : err);
   process.exit(1);
 }

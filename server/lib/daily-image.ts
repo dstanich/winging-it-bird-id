@@ -8,28 +8,38 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import type { AIProvider } from './ai-provider.ts';
+import type { Storage } from './storage.ts';
+import type { BirdSpecies } from './types.ts';
+
+export interface DailyImageOptions {
+  /** Images are written to downloadDir/YYYY/M/D/. */
+  downloadDir: string;
+  /** How many days back (before today) to consider. */
+  lookbackDays: number;
+  /** Delay after each AI call (successful or not), to avoid rate limits. */
+  delayMs: number;
+}
 
 /** Local hour on the following day at which a day counts as complete. */
 export const DAY_COMPLETE_HOUR = 7;
 
-const MIME_EXTENSIONS = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
+const MIME_EXTENSIONS: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
 
 /** Species names the AI uses when it can't identify the bird, e.g. "unknown" or "unknown bird". */
-function isKnownSpecies(species) {
+function isKnownSpecies(species: string | null | undefined): species is string {
   return species != null && species.trim() !== '' && !/\b(unknown|unidentified)\b/i.test(species);
 }
 
-function toTitleCase(name) {
-  return name.replace(/(^|\s)(\S)/g, (_, space, ch) => space + ch.toUpperCase());
+function toTitleCase(name: string): string {
+  return name.replace(/(^|\s)(\S)/g, (_, space: string, ch: string) => space + ch.toUpperCase());
 }
 
 /**
  * Formats a local date as YYYY-MM-DD.
- * @param {Date} date
- * @returns {string}
  */
-export function localDateString(date) {
-  const pad = (n) => String(n).padStart(2, '0');
+export function localDateString(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
@@ -37,11 +47,9 @@ export function localDateString(date) {
  * Merges video and audio species into one de-duplicated, title-cased,
  * alphabetical list of known species. Matching ignores case, since the AI
  * stores lowercase names and BirdNET-Go doesn't.
- * @param {{ video: string[], audio: string[] }} species
- * @returns {string[]}
  */
-export function mergeSpecies({ video, audio }) {
-  const byKey = new Map();
+export function mergeSpecies({ video, audio }: BirdSpecies): string[] {
+  const byKey = new Map<string, string>();
   for (const name of [...video, ...audio]) {
     if (!isKnownSpecies(name)) continue;
     const trimmed = name.trim();
@@ -54,12 +62,9 @@ export function mergeSpecies({ video, audio }) {
 /**
  * Returns the local start-of-day Dates for the completed days in the lookback
  * window, oldest first. Yesterday is complete only from DAY_COMPLETE_HOUR today.
- * @param {Date} now
- * @param {number} lookbackDays
- * @returns {Date[]}
  */
-export function completedDays(now, lookbackDays) {
-  const days = [];
+export function completedDays(now: Date, lookbackDays: number): Date[] {
+  const days: Date[] = [];
   for (let i = lookbackDays; i >= 1; i--) {
     const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
     const completeAt = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1, DAY_COMPLETE_HOUR);
@@ -73,15 +78,9 @@ export function completedDays(now, lookbackDays) {
  * window that doesn't have one yet. Failed generations store nothing, so the
  * next tick retries them.
  *
- * @param {import('./storage.js').Storage} storage
- * @param {import('./ai-provider.js').AIProvider} aiProvider
- * @param {Object} options
- * @param {string} options.downloadDir - Images are written to downloadDir/YYYY/M/D/.
- * @param {number} options.lookbackDays - How many days back (before today) to consider.
- * @param {number|string} options.delayMs - Delay after each AI call (successful or not), to avoid rate limits.
- * @returns {Promise<number>} Number of images generated.
+ * @returns Number of images generated.
  */
-export async function generateDailyImages(storage, aiProvider, { downloadDir, lookbackDays, delayMs }) {
+export async function generateDailyImages(storage: Storage, aiProvider: AIProvider, { downloadDir, lookbackDays, delayMs }: DailyImageOptions): Promise<number> {
   let generated = 0;
 
   for (const day of completedDays(new Date(), lookbackDays)) {

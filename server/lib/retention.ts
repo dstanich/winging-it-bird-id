@@ -1,29 +1,31 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { localDateString } from './daily-image.js';
+import { localDateString } from './daily-image.ts';
+import type { Storage } from './storage.ts';
 
 const MS_PER_DAY = 86_400_000;
 
-function startOfLocalDay(d) {
+function startOfLocalDay(d: Date): number {
     return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
-function parseDirInt(name) {
+function parseDirInt(name: string): number | null {
     if (!/^\d+$/.test(name)) return null;
     return parseInt(name, 10);
 }
 
-function safeRmdir(dir) {
+function safeRmdir(dir: string): void {
     try {
         fs.rmdirSync(dir);
-    } catch (err) {
+    } catch (error) {
+        const err = error as NodeJS.ErrnoException;
         if (err.code !== 'ENOTEMPTY' && err.code !== 'ENOENT') {
             console.warn(`Could not remove directory ${dir}: ${err.message}`);
         }
     }
 }
 
-export async function pruneOldData(storage, downloadDir, retentionDays) {
+export async function pruneOldData(storage: Storage, downloadDir: string | undefined, retentionDays: number): Promise<void> {
     const now = new Date();
     const cutoffMs = now.getTime() - retentionDays * MS_PER_DAY;
     const cutoffIso = new Date(cutoffMs).toISOString();

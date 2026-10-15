@@ -1,28 +1,31 @@
 import { EventEmitter } from 'events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { FtpSrv as RealFtpSrv } from 'ftp-srv';
 
 const { FtpSrv, instances } = vi.hoisted(() => {
-  const instances = [];
+  const instances: FakeFtpServer[] = [];
   const FtpSrv = vi.fn();
   return { FtpSrv, instances };
 });
 
 vi.mock('ftp-srv', () => ({ FtpSrv }));
 
-const { startFtpListener } = await import('../lib/ftp-listener.js');
+const { startFtpListener } = await import('../lib/ftp-listener.ts');
 
 /** Minimal stand-in for an ftp-srv server: an EventEmitter with listen/close. */
 class FakeFtpServer extends EventEmitter {
-  constructor(options) {
+  options: unknown;
+  listen = vi.fn().mockResolvedValue(undefined);
+  close = vi.fn().mockResolvedValue(undefined);
+
+  constructor(options: unknown) {
     super();
     this.options = options;
-    this.listen = vi.fn().mockResolvedValue();
-    this.close = vi.fn().mockResolvedValue();
   }
 }
 
 /** Emits a login event and returns how the handler settled it. */
-const attemptLogin = (server, credentials) => {
+const attemptLogin = (server: EventEmitter, credentials: { username?: string; password?: string }) => {
   const resolve = vi.fn();
   const reject = vi.fn();
   server.emit('login', credentials, resolve, reject);
@@ -33,7 +36,7 @@ describe('startFtpListener', () => {
   beforeEach(() => {
     instances.length = 0;
     FtpSrv.mockReset();
-    FtpSrv.mockImplementation(function (options) {
+    FtpSrv.mockImplementation(function (options: unknown) {
       const server = new FakeFtpServer(options);
       instances.push(server);
       return server;
@@ -85,7 +88,7 @@ describe('startFtpListener', () => {
   });
 
   it('propagates listen failures', async () => {
-    FtpSrv.mockImplementation(function (options) {
+    FtpSrv.mockImplementation(function (options: unknown) {
       const server = new FakeFtpServer(options);
       server.listen.mockRejectedValue(new Error('EADDRINUSE'));
       return server;
@@ -94,7 +97,7 @@ describe('startFtpListener', () => {
   });
 
   describe('login with credentials configured', () => {
-    let server;
+    let server: RealFtpSrv;
 
     beforeEach(async () => {
       ({ server } = await startFtpListener({ uploadDir: '/uploads', username: 'camera', password: 's3cret' }));

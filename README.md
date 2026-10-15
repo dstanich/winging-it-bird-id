@@ -27,6 +27,8 @@ Winging-It is being hosted as a static site on AWS and will be updated as improv
 
 The server is a Node.js application that runs a local FTP server for the camera to push recorded clips to, extracts thumbnails from those clips, communicates with the AI provider, and stores the results into storage.
 
+It's written in TypeScript and needs **Node.js 24 or newer** (`.nvmrc` pins it): Node runs the `.ts` files directly using its built-in type stripping, so there's no build step. `npm run typecheck` runs `tsc` to check types only. Because Node only removes types, the code can't use TypeScript features that need code generation (enums, namespaces, constructor parameter properties); `erasableSyntaxOnly` in `tsconfig.json` makes these an error.
+
 #### Setup
 
 1. `cd server && npm install`
@@ -42,7 +44,7 @@ Alternatively, run it with the scheduled publisher via Docker Compose — see [D
 
 #### Tests
 
-`cd server && npm test` runs the [Vitest](https://vitest.dev) suite in `server/test/` (`npm run test:watch` for watch mode). Tests use temp directories and stubbed network/AI calls, so they need no `.env`, never touch `server/data/`, and never call Gemini or BirdNET-Go. Thumbnail tests run the real bundled ffmpeg binary.
+`cd server && npm test` runs the [Vitest](https://vitest.dev) suite in `server/test/` (`npm run test:watch` for watch mode). Tests use temp directories and stubbed network/AI calls, so they need no `.env`, never touch `server/data/`, and never call Gemini or BirdNET-Go. Thumbnail tests run the real bundled ffmpeg binary. Run `npm run typecheck` as well, since Vitest strips types without checking them.
 
 
 ### Client
@@ -118,14 +120,14 @@ The FTP port mappings in `docker-compose.yml` (`2121`, `30100-30110`) are fixed;
 
 GitHub Actions run on pull requests to `main` and on pushes to `main`:
 
-- **CI** (`.github/workflows/ci.yml`): `server` (`npm test`), `client` (`npm run lint`, `npm test`, then `npm run build` against a small fake database created by `server/scripts/seed-ci-db.js`), and `publish-script` (`npm ci` + `node --check index.js`). These run on every PR, so they can be required in branch protection.
+- **CI** (`.github/workflows/ci.yml`): `server` (`npm run typecheck`, `npm test`), `client` (`npm run lint`, `npm test`, then `npm run build` against a small fake database created by `server/scripts/seed-ci-db.ts`), and `publish-script` (`npm ci` + `node --check index.js`). These run on every PR, so they can be required in branch protection.
 - **Docker** (`.github/workflows/docker.yml`): builds the server and client images without pushing them, only when `server/`, `client/`, or `docker-compose.yml` change.
 
-To reproduce the client build check locally without real data: `cd server && DATA_DIR=/tmp/ci-data node scripts/seed-ci-db.js` (the script refuses to touch an existing database), then build against that directory.
+To reproduce the client build check locally without real data: `cd server && DATA_DIR=/tmp/ci-data node scripts/seed-ci-db.ts` (the script refuses to touch an existing database), then build against that directory.
 
 ## TODOs
 
-- [ ] TypeScript
+- [ ] TypeScript for the scheduled-publish script (the server and client are already TypeScript)
 - [ ] Tests for client pages and the scheduled-publish script
 - [ ] Linting
 - [ ] Graphing and other nice visualizations

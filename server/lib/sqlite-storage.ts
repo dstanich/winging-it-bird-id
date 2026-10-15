@@ -1,9 +1,25 @@
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
-import { DEFAULT_PROMPT, DEFAULT_MODEL, DEFAULT_IMAGE_PROMPT, DEFAULT_IMAGE_MODEL } from './ai-provider.js';
+import { DEFAULT_PROMPT, DEFAULT_MODEL, DEFAULT_IMAGE_PROMPT, DEFAULT_IMAGE_MODEL } from './ai-provider.ts';
+import type {
+    AudioIdentificationInput,
+    BirdSpecies,
+    Clip,
+    DailyImageInput,
+    DailyImageRow,
+    SettingRow,
+    SettingUpdates,
+    SettingWithId,
+    SpeciesImageInput,
+    SpeciesImageRow,
+    StorageProvider,
+} from './types.ts';
 
-export class SQLiteStorage {
+export class SQLiteStorage implements StorageProvider {
+    dataDir: string;
+    db: Database.Database;
+
     constructor() {
         this.dataDir = process.env.DATA_DIR || './data';
         if (!fs.existsSync(this.dataDir)) {
@@ -15,7 +31,7 @@ export class SQLiteStorage {
         this._createSchema();
     }
 
-    _createSchema() {
+    _createSchema(): void {
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS clips (
                 id INTEGER PRIMARY KEY,
@@ -99,9 +115,9 @@ export class SQLiteStorage {
         this._migrateIdentifications();
     }
 
-    _migrateIdentifications() {
+    _migrateIdentifications(): void {
         // Migrate from old `model` TEXT column to `ai_model_id` + `ai_prompt_id` foreign keys
-        const columns = this.db.pragma('table_info(identifications)');
+        const columns = this.db.pragma('table_info(identifications)') as { name: string }[];
         const hasModelColumn = columns.some(c => c.name === 'model');
         if (!hasModelColumn) return; // already migrated or fresh DB
 
@@ -126,7 +142,7 @@ export class SQLiteStorage {
         `);
 
         // Backfill ai_prompt_id with the active prompt for rows that had a model set
-        const activePrompt = this.db.prepare("SELECT id FROM settings WHERE name = 'ai_prompt' AND is_active = 1").get();
+        const activePrompt = this.db.prepare("SELECT id FROM settings WHERE name = 'ai_prompt' AND is_active = 1").get() as { id: number } | undefined;
         if (activePrompt) {
             this.db.exec(`
                 UPDATE identifications
@@ -157,7 +173,7 @@ export class SQLiteStorage {
         `);
     }
 
-    _seedDefaultSettings() {
+    _seedDefaultSettings(): void {
         const defaults = [
             {
                 name: 'ai_prompt',
@@ -179,34 +195,34 @@ export class SQLiteStorage {
 
         const insert = this.db.prepare('INSERT INTO settings (name, value, is_active) VALUES (?, ?, 1)');
         for (const { name, value } of defaults) {
-            const existing = this.db.prepare('SELECT COUNT(*) as count FROM settings WHERE name = ?').get(name);
+            const existing = this.db.prepare('SELECT COUNT(*) as count FROM settings WHERE name = ?').get(name) as { count: number };
             if (existing.count === 0) {
                 insert.run(name, value);
             }
         }
     }
 
-    getSetting(name) {
-        const row = this.db.prepare('SELECT value FROM settings WHERE name = ? AND is_active = 1').get(name);
+    getSetting(name: string): string | null {
+        const row = this.db.prepare('SELECT value FROM settings WHERE name = ? AND is_active = 1').get(name) as { value: string } | undefined;
         return row ? row.value : null;
     }
 
-    getSettingWithId(name) {
-        const row = this.db.prepare('SELECT id, value FROM settings WHERE name = ? AND is_active = 1').get(name);
+    getSettingWithId(name: string): SettingWithId | null {
+        const row = this.db.prepare('SELECT id, value FROM settings WHERE name = ? AND is_active = 1').get(name) as SettingWithId | undefined;
         return row || null;
     }
 
-    getSettings(name) {
-        return this.db.prepare('SELECT * FROM settings WHERE name = ?').all(name);
+    getSettings(name: string): SettingRow[] {
+        return this.db.prepare('SELECT * FROM settings WHERE name = ?').all(name) as SettingRow[];
     }
 
-    setSetting(name, value, isActive = 0) {
+    setSetting(name: string, value: string, isActive: number | boolean = 0): Database.RunResult {
         return this.db.prepare('INSERT INTO settings (name, value, is_active) VALUES (?, ?, ?)').run(name, value, isActive ? 1 : 0);
     }
 
-    updateSetting(id, { value, isActive } = {}) {
-        const fields = [];
-        const params = [];
+    updateSetting(id: number, { value, isActive }: SettingUpdates = {}): void {
+        const fields: string[] = [];
+        const params: (string | number)[] = [];
         if (value !== undefined) { fields.push('value = ?'); params.push(value); }
         if (isActive !== undefined) { fields.push('is_active = ?'); params.push(isActive ? 1 : 0); }
         if (fields.length === 0) return;
@@ -214,11 +230,11 @@ export class SQLiteStorage {
         this.db.prepare(`UPDATE settings SET ${fields.join(', ')} WHERE id = ?`).run(...params);
     }
 
-    deleteSetting(id) {
+    deleteSetting(id: number): void {
         this.db.prepare('DELETE FROM settings WHERE id = ?').run(id);
     }
 
-    addClip(clip) {
+    addClip(clip: Clip): void {
         const insertClip = this.db.prepare(`
             INSERT OR REPLACE INTO clips (id, created_at, updated_at, device_name, network_name, type, source, thumbnail, media, time_zone, local_thumbnail_path)
             VALUES (@id, @created_at, @updated_at, @device_name, @network_name, @type, @source, @thumbnail, @media, @time_zone, @local_thumbnail_path)
@@ -229,7 +245,7 @@ export class SQLiteStorage {
             VALUES (@clip_id, @is_bird, @species, @gender, @count, @confidence, @non_bird_species, @ai_model_id, @ai_prompt_id)
         `);
 
-        const transaction = this.db.transaction((clip) => {
+        const transaction = this.db.transaction((clip: Clip) => {
             insertClip.run({
                 id: clip.id,
                 created_at: clip.created_at || null,
@@ -268,37 +284,37 @@ export class SQLiteStorage {
         transaction(clip);
     }
 
-    commit() {
+    commit(): void {
         // No-op: SQLite writes are immediate
     }
 
-    data(since = null) {
-        let rows;
+    data(since: string | Date | null = null): Record<number, boolean> {
+        let rows: { id: number }[];
         if (since) {
             const sinceStr = since instanceof Date ? since.toISOString() : String(since);
-            rows = this.db.prepare('SELECT id FROM clips WHERE created_at >= ?').all(sinceStr);
+            rows = this.db.prepare('SELECT id FROM clips WHERE created_at >= ?').all(sinceStr) as { id: number }[];
         } else {
-            rows = this.db.prepare('SELECT id FROM clips').all();
+            rows = this.db.prepare('SELECT id FROM clips').all() as { id: number }[];
         }
-        const result = {};
+        const result: Record<number, boolean> = {};
         for (const row of rows) {
             result[row.id] = true;
         }
         return result;
     }
 
-    getMostRecentClipTimestamp() {
-        const row = this.db.prepare('SELECT created_at FROM clips ORDER BY created_at DESC LIMIT 1').get();
+    getMostRecentClipTimestamp(): string | null {
+        const row = this.db.prepare('SELECT created_at FROM clips ORDER BY created_at DESC LIMIT 1').get() as { created_at: string | null } | undefined;
         return row ? row.created_at : null;
     }
 
-    pruneClipsBefore(cutoffIso) {
+    pruneClipsBefore(cutoffIso: string): { clipsDeleted: number; identificationsDeleted: number } {
         const deleteIdents = this.db.prepare(
             'DELETE FROM identifications WHERE clip_id IN (SELECT id FROM clips WHERE created_at < ?)'
         );
         const deleteClips = this.db.prepare('DELETE FROM clips WHERE created_at < ?');
 
-        const transaction = this.db.transaction((cutoff) => {
+        const transaction = this.db.transaction((cutoff: string) => {
             const identsResult = deleteIdents.run(cutoff);
             const clipsResult = deleteClips.run(cutoff);
             return {
@@ -310,12 +326,12 @@ export class SQLiteStorage {
         return transaction(cutoffIso);
     }
 
-    getLatestAudioDetectionId() {
-        const row = this.db.prepare('SELECT MAX(birdnet_detection_id) as maxId FROM audio_identifications').get();
+    getLatestAudioDetectionId(): number {
+        const row = this.db.prepare('SELECT MAX(birdnet_detection_id) as maxId FROM audio_identifications').get() as { maxId: number | null } | undefined;
         return row?.maxId || 0;
     }
 
-    addAudioIdentification(record) {
+    addAudioIdentification(record: AudioIdentificationInput): Database.RunResult {
         const insert = this.db.prepare(`
             INSERT OR IGNORE INTO audio_identifications
                 (birdnet_detection_id, species, scientific_name, species_code, confidence, verified, source, detected_at, begin_time, end_time, local_audio_path, species_image_id, created_at)
@@ -339,12 +355,12 @@ export class SQLiteStorage {
         });
     }
 
-    getSpeciesImage(scientificName) {
-        const row = this.db.prepare('SELECT * FROM species_images WHERE scientific_name = ?').get(scientificName);
+    getSpeciesImage(scientificName: string): SpeciesImageRow | null {
+        const row = this.db.prepare('SELECT * FROM species_images WHERE scientific_name = ?').get(scientificName) as SpeciesImageRow | undefined;
         return row || null;
     }
 
-    addSpeciesImage({ scientific_name, common_name, local_path }) {
+    addSpeciesImage({ scientific_name, common_name, local_path }: SpeciesImageInput): number {
         const insert = this.db.prepare(`
             INSERT INTO species_images (scientific_name, common_name, local_path, created_at)
             VALUES (@scientific_name, @common_name, @local_path, @created_at)
@@ -355,35 +371,35 @@ export class SQLiteStorage {
             local_path,
             created_at: new Date().toISOString(),
         });
-        return result.lastInsertRowid;
+        return Number(result.lastInsertRowid);
     }
 
-    pruneAudioIdentificationsBefore(cutoffIso) {
+    pruneAudioIdentificationsBefore(cutoffIso: string): { audioIdentificationsDeleted: number } {
         // BirdNET-Go timestamps carry a UTC offset (e.g. -05:00), so compare instants, not strings.
         const result = this.db.prepare('DELETE FROM audio_identifications WHERE julianday(detected_at) < julianday(?)').run(cutoffIso);
         return { audioIdentificationsDeleted: result.changes };
     }
 
-    getBirdSpeciesBetween(startIso, endIso) {
+    getBirdSpeciesBetween(startIso: string, endIso: string): BirdSpecies {
         const video = this.db.prepare(`
             SELECT DISTINCT i.species FROM identifications i
             JOIN clips c ON c.id = i.clip_id
             WHERE i.is_bird = 1 AND i.species IS NOT NULL AND c.created_at >= ? AND c.created_at < ?
-        `).all(startIso, endIso).map(r => r.species);
+        `).all(startIso, endIso).map(r => (r as { species: string }).species);
         // BirdNET-Go timestamps carry a UTC offset (e.g. -05:00), so compare instants, not strings.
         const audio = this.db.prepare(`
             SELECT DISTINCT species FROM audio_identifications
             WHERE species IS NOT NULL AND julianday(detected_at) >= julianday(?) AND julianday(detected_at) < julianday(?)
-        `).all(startIso, endIso).map(r => r.species);
+        `).all(startIso, endIso).map(r => (r as { species: string }).species);
         return { video, audio };
     }
 
-    getDailyImage(date) {
-        const row = this.db.prepare('SELECT * FROM daily_images WHERE date = ?').get(date);
+    getDailyImage(date: string): DailyImageRow | null {
+        const row = this.db.prepare('SELECT * FROM daily_images WHERE date = ?').get(date) as DailyImageRow | undefined;
         return row || null;
     }
 
-    addDailyImage({ date, species, local_path, ai_model_id, ai_prompt_id }) {
+    addDailyImage({ date, species, local_path, ai_model_id, ai_prompt_id }: DailyImageInput): number {
         const insert = this.db.prepare(`
             INSERT INTO daily_images (date, species, local_path, ai_model_id, ai_prompt_id, created_at)
             VALUES (@date, @species, @local_path, @ai_model_id, @ai_prompt_id, @created_at)
@@ -396,10 +412,10 @@ export class SQLiteStorage {
             ai_prompt_id: ai_prompt_id ?? null,
             created_at: new Date().toISOString(),
         });
-        return result.lastInsertRowid;
+        return Number(result.lastInsertRowid);
     }
 
-    pruneDailyImagesBefore(cutoffDate) {
+    pruneDailyImagesBefore(cutoffDate: string): { dailyImagesDeleted: number } {
         // date is YYYY-MM-DD, so string comparison orders correctly.
         const result = this.db.prepare('DELETE FROM daily_images WHERE date < ?').run(cutoffDate);
         return { dailyImagesDeleted: result.changes };

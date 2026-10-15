@@ -1,5 +1,14 @@
 import { GoogleGenAI } from "@google/genai";
 import * as fs from 'fs';
+import type { Storage } from './storage.ts';
+import type { BirdIdentification, Clip } from './types.ts';
+
+export interface GeneratedImage {
+    data: Buffer;
+    mimeType: string;
+    ai_model_id: number | null;
+    ai_prompt_id: number | null;
+}
 
 export const DEFAULT_PROMPT = "Identify the bird or birds in the attached screenshot. Return a JSON array of objects with the following format: { \"is_bird\": true or false, \"species\": \"common species name in all lower case letters\", \"gender\": \"male or female or unknown\", \"count\": number of birds of this species in the screenshot, \"confidence\": confidence score between 0 and 1, \"non_bird_species\": \"non-bird species if any\" }.  Only return JSON, do not return any other data.  If the screenshot has no bird set is_bird to false and set non_bird_species to the most prominent non-bird object in the image, if any.  If there is no bird, still calculate the confidence score between 0 and 1 for what you believe is in the image.  Do not put the JSON in a codeblock, return only JSON.";
 export const DEFAULT_MODEL = "gemini-2.5-flash";
@@ -7,12 +16,15 @@ export const DEFAULT_IMAGE_PROMPT = "Create a single cheerful cartoon-style illu
 export const DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-lite-image";
 
 export class AIProvider {
-    constructor(storage) {
+    storage: Storage;
+    genai: GoogleGenAI;
+
+    constructor(storage: Storage) {
         this.storage = storage;
         this.genai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY });
     }
 
-    async identifyBird(clipData, screenshotPath) {
+    async identifyBird(clipData: Clip, screenshotPath: string): Promise<BirdIdentification | BirdIdentification[]> {
         try {
             const promptSetting = this.storage.getSettingWithId('ai_prompt');
             const modelSetting = this.storage.getSettingWithId('ai_model');
@@ -43,7 +55,7 @@ export class AIProvider {
                 ]
             })
 
-            const resultJson = JSON.parse(response.text);
+            const resultJson = JSON.parse(response.text ?? '') as BirdIdentification | BirdIdentification[];
             const resultArray = Array.isArray(resultJson) ? resultJson : [resultJson]; // supposed to be an array but it isn't always
             for (const result of resultArray) {
                 result.ai_model_id = modelSetting?.id ?? null;
@@ -59,10 +71,9 @@ export class AIProvider {
 
     /**
      * Generates an image from the active image prompt template, with {species} replaced by speciesList.
-     * @param {string} speciesList - Comma-separated species names to fill into the prompt.
-     * @returns {Promise<{ data: Buffer, mimeType: string, ai_model_id: number|null, ai_prompt_id: number|null }>}
+     * @param speciesList - Comma-separated species names to fill into the prompt.
      */
-    async generateImage(speciesList) {
+    async generateImage(speciesList: string): Promise<GeneratedImage> {
         const promptSetting = this.storage.getSettingWithId('ai_image_prompt');
         const modelSetting = this.storage.getSettingWithId('ai_image_model');
         const prompt = (promptSetting?.value || DEFAULT_IMAGE_PROMPT).replaceAll('{species}', speciesList);
@@ -84,7 +95,7 @@ export class AIProvider {
 
         const parts = response.candidates?.[0]?.content?.parts ?? [];
         const imagePart = parts.find(part => part.inlineData?.data);
-        if (!imagePart) {
+        if (!imagePart?.inlineData?.data) {
             const reason = response.candidates?.[0]?.finishReason ?? response.promptFeedback?.blockReason ?? 'no image returned';
             throw new Error(`Image generation returned no image (${reason})`);
         }

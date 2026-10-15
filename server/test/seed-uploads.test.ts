@@ -2,19 +2,20 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import ffmpegPath from 'ffmpeg-static';
+import { FFMPEG_PATH } from '../lib/ffmpeg-path.ts';
 import {
   listImages, isNonBirdImage, nonBirdCount, pickRandom, clipSpacingSeconds, clipTimestamps, reolinkTimestamp, seedUploads,
-} from '../lib/seed-uploads.js';
-import { discoverNewClips } from '../lib/ftp-clips.js';
-import { useTempDirs } from './helpers.js';
+} from '../lib/seed-uploads.ts';
+import { discoverNewClips } from '../lib/ftp-clips.ts';
+import { fake, useTempDirs } from './helpers.ts';
+import type { Storage } from '../lib/storage.ts';
 
 const tempDir = useTempDirs();
 
 /** Writes a small real JPEG with the bundled ffmpeg binary. */
-function writeImage(dir, name) {
+function writeImage(dir: string, name: string): string {
   const filePath = path.join(dir, name);
-  execFileSync(ffmpegPath, [
+  execFileSync(FFMPEG_PATH, [
     '-y', '-loglevel', 'error',
     '-f', 'lavfi', '-i', 'testsrc=size=63x47',
     '-frames:v', '1', filePath,
@@ -120,12 +121,12 @@ describe('seedUploads', () => {
     ]);
     expect(new Set(results.map(r => path.basename(r.imagePath)))).toEqual(new Set(['cardinal.jpg', 'bluejay.jpg', 'nonbird.jpg']));
 
-    const storage = { data: () => ({}) };
+    const storage = fake<Storage>({ data: () => ({}) });
     const clips = await discoverNewClips(storage, uploadDir, downloadDir, 'Bird');
     expect(clips).toHaveLength(3);
     for (const clip of clips) {
       expect(clip.device_name).toBe('Feeder');
-      expect(fs.existsSync(clip.localThumbnailPath)).toBe(true);
+      expect(fs.existsSync(clip.localThumbnailPath!)).toBe(true);
     }
   });
 
