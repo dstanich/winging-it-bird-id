@@ -107,7 +107,20 @@ Every `bird-developer` task runs on a branch named `dev/<slug>` inside an isolat
      ```bash
      node --check client/scripts/scheduled-publish/index.js
      ```
-4. **Commit with Agent as Author**:
+4. **Capture UI Screenshots (for User-Facing UI Changes Across All Screen Sizes)**:
+   - When changes affect client UI (pages, components, responsive layout, styling):
+     - After `npm run build` succeeds, capture screenshots across **all standard screen sizes** (**desktop**, **tablet**, and **mobile**) to verify responsive layouts and provide complete visual documentation:
+       ```bash
+       cd client && npm run screenshot -- /path/to/route --all-sizes
+       ```
+       (Running `npm run screenshot -- --all-sizes` with no route arguments automatically captures `/` and the most recent date page across all three device sizes).
+     - Individual viewports can also be targeted if needed:
+       - **Desktop** (`1280x800`): `npm run screenshot -- /path/to/route --desktop`
+       - **Tablet** (`768x1024`): `npm run screenshot -- /path/to/route --tablet`
+       - **Mobile** (`375x667`): `npm run screenshot -- /path/to/route --mobile`
+       - Add `--full-page` to capture the entire scrollable height when reviewing long feeds.
+     - Images are saved into `<repo-root>/.screenshots/` (e.g. `<slug>-desktop.png`, `<slug>-tablet.png`, `<slug>-mobile.png`), which is git-ignored to prevent bloating repository history.
+5. **Commit with Agent as Author**:
    - Organize work into logical commits using Conventional Commits with a scope (`feat(server): ...`, `fix(client): ...`, `docs: ...`, `chore: ...`). Multiple commits are fine when they aid clarity, but do not go overboard (typically 1–3 commits for a task).
    - The commit must come from the active coding agent (author) instead of the user; the user will then review the PR and merge it as themselves so it will ultimately be authored by both:
      - In **Antigravity**:
@@ -180,24 +193,37 @@ Format the Pull Request using this exact structure:
   - **Branch**: `dev/<slug>`
   - **Checks run**: <e.g., `server: typecheck + vitest`, `client: eslint + vitest + next build`>
   - **`bird-reviewer` summary**: <Number of review rounds run, issues fixed, and any skipped/remaining items>
+
+  ## Screenshots
+
+  ### Desktop
+  ![<Page> - Desktop](./.screenshots/<file>-desktop.png)
+
+  ### Tablet
+  ![<Page> - Tablet](./.screenshots/<file>-tablet.png)
+
+  ### Mobile
+  ![<Page> - Mobile](./.screenshots/<file>-mobile.png)
+  *(Include when UI changes were made; provide all three screen sizes: desktop, tablet, and mobile)*
   ```
 
 #### Branching on `--create-pr`:
 
 - **Default (`--create-pr` NOT specified)**:
   - **Do NOT push the branch or create the GitHub PR.**
-  - Present the proposed **PR Title**, the rendered **PR Body** (in a markdown block so it is easy to copy or inspect), the worktree/branch location (`$WORKTREE_DIR` / `.worktrees/<slug>` on branch `dev/<slug>`), and the exact commands to publish it when ready:
+  - If screenshots were captured in `.screenshots/`, render them directly in the chat session or artifact so the user can visually review all screen sizes (desktop, tablet, mobile).
+  - Present the proposed **PR Title**, the rendered **PR Body** (in a markdown block so it is easy to copy or inspect), the worktree/branch location (`$WORKTREE_DIR` / `.worktrees/<slug>` on branch `dev/<slug>`), and the exact commands to publish it when ready (including `--attach` flags for all captured screenshots):
     ```bash
     git push -u origin dev/<slug>
-    gh pr create --base main --head dev/<slug> --title "<PR Title>" --body "<PR Body>"
+    gh pr create --base main --head dev/<slug> --title "<PR Title>" --body "<PR Body>" --attach '.screenshots/<file>-desktop.png#Desktop' --attach '.screenshots/<file>-tablet.png#Tablet' --attach '.screenshots/<file>-mobile.png#Mobile'
     ```
 - **When `--create-pr` IS specified**:
   - Push the branch to `origin`:
     ```bash
     git push -u origin dev/<slug>
     ```
-  - Create the PR on GitHub via `gh pr create`:
+  - Create the PR on GitHub via `gh pr create`, appending `--attach '.screenshots/<file>.png#<Caption>'` for each captured screenshot across desktop, tablet, and mobile (GitHub CLI uploads each file and rewrites matching `./.screenshots/<file>.png` body references to the uploaded GitHub asset URLs):
     ```bash
-    gh pr create --base main --head dev/<slug> --title "<PR Title>" --body-file <temp-body-file>
+    gh pr create --base main --head dev/<slug> --title "<PR Title>" --body-file <temp-body-file> --attach '.screenshots/<file>-desktop.png#Desktop' --attach '.screenshots/<file>-tablet.png#Tablet' --attach '.screenshots/<file>-mobile.png#Mobile'
     ```
   - Report the created PR URL and a brief summary back to the user.

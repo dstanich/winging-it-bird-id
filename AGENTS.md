@@ -127,6 +127,7 @@ npm run dev                # Next.js dev server on http://localhost:3000 (no .en
 npm run build              # Static export build (outputs to client/out/)
 npm run lint               # ESLint (eslint-config-next core-web-vitals + typescript)
 npm test                   # vitest run: the client test suite (npm run test:watch for watch mode)
+npm run screenshot         # node scripts/screenshot.mts: capture UI screenshots with Playwright (desktop/tablet/mobile, offline client/out routing or live dev)
 ```
 
 ### Scheduled publish (`cd client/scripts/scheduled-publish`)

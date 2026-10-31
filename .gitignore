@@ -30,5 +30,8 @@ uploads/
 data/
 !data/.gitkeep
 
+# Screenshots
+.screenshots/
+
 # OS
 .DS_Store
