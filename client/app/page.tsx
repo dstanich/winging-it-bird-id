@@ -10,7 +10,8 @@ export default function Home() {
     <div className="px-4 py-8">
       <main className="max-w-6xl mx-auto">
         <p className="max-w-2xl mb-8 text-zinc-600 dark:text-zinc-400">
-          AI powered bird identifications (<a href={pageHref("/settings")} className="text-blue-600 dark:text-blue-400 hover:underline">current AI settings</a>) written in collaboration with GitHub Copilot and Claude Code
+          AI powered bird identifications (<a href={pageHref("/settings")} className="text-blue-600 dark:text-blue-400 hover:underline">current AI settings</a>) written in collaboration with Claude Code,
+          {' '}Google Antigravity, and GitHub Copilot
           {' '}(<a href="https://github.com/dstanich/winging-it-bird-id" target="_blank" className="text-blue-600 dark:text-blue-400 hover:underline">GitHub Repo</a>). Location of camera is in the
           {' '}midwest USA using a <a href="https://reolink.com/product/argus-3-pro" target="_blank" className="text-blue-600 dark:text-blue-400 hover:underline">Reolink camera</a> mounted inside a
           {' '}<LightboxLink
