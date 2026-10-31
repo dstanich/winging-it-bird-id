@@ -11,8 +11,8 @@
   },
   "scripts": {
     "start": "node index.ts",
-    "seed:db": "node scripts/seed-db.ts",
-    "seed:uploads": "node scripts/seed-uploads.ts",
+    "seed:local-db": "node scripts/seed-local-db.ts",
+    "seed:local-uploads": "node scripts/seed-local-uploads.ts",
     "typecheck": "tsc",
     "test": "vitest run",
     "test:watch": "vitest"

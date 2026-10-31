@@ -7,8 +7,8 @@ import {
   randomInt,
   imageToIdentification,
   audioToSpeciesInfo,
-  seedDb,
-} from '../lib/seed-db.ts';
+  seedLocalDb,
+} from '../lib/seed-local-db.ts';
 import type { SQLiteStorage } from '../lib/sqlite-storage.ts';
 import { Storage } from '../lib/storage.ts';
 import { useTempDirs } from './helpers.ts';
@@ -94,7 +94,7 @@ describe('audioToSpeciesInfo', () => {
   });
 });
 
-describe('seedDb', () => {
+describe('seedLocalDb', () => {
   const now = new Date('2026-10-31T15:00:00.000Z');
 
   function setupMediaDirs() {
@@ -117,7 +117,7 @@ describe('seedDb', () => {
     const storage = new Storage();
     const db = (storage.provider as SQLiteStorage).db;
     try {
-      const result = seedDb(storage, {
+      const result = seedLocalDb(storage, {
         imageDir,
         audioDir,
         downloadDir,
@@ -179,13 +179,13 @@ describe('seedDb', () => {
     vi.stubEnv('DATA_DIR', path.join(tempDir(), 'data'));
     const storage = new Storage();
     try {
-      expect(() => seedDb(storage, { imageDir, audioDir, downloadDir: tempDir(), days: 0 }))
+      expect(() => seedLocalDb(storage, { imageDir, audioDir, downloadDir: tempDir(), days: 0 }))
         .toThrow(/Invalid days/);
-      expect(() => seedDb(storage, { imageDir, audioDir, downloadDir: tempDir(), minCount: 20, maxCount: 10 }))
+      expect(() => seedLocalDb(storage, { imageDir, audioDir, downloadDir: tempDir(), minCount: 20, maxCount: 10 }))
         .toThrow(/Invalid count range/);
-      expect(() => seedDb(storage, { imageDir: emptyDir, audioDir, downloadDir: tempDir() }))
+      expect(() => seedLocalDb(storage, { imageDir: emptyDir, audioDir, downloadDir: tempDir() }))
         .toThrow(/No bird images/);
-      expect(() => seedDb(storage, { imageDir, audioDir: emptyDir, downloadDir: tempDir() }))
+      expect(() => seedLocalDb(storage, { imageDir, audioDir: emptyDir, downloadDir: tempDir() }))
         .toThrow(/No audio files/);
     } finally {
       (storage.provider as SQLiteStorage).db.close();

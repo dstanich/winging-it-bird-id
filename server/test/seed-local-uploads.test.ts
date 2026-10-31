@@ -4,8 +4,8 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { FFMPEG_PATH } from '../lib/ffmpeg-path.ts';
 import {
-  listImages, isNonBirdImage, nonBirdCount, pickRandom, clipSpacingSeconds, clipTimestamps, reolinkTimestamp, seedUploads,
-} from '../lib/seed-uploads.ts';
+  listImages, isNonBirdImage, nonBirdCount, pickRandom, clipSpacingSeconds, clipTimestamps, reolinkTimestamp, seedLocalUploads,
+} from '../lib/seed-local-uploads.ts';
 import { discoverNewClips } from '../lib/ftp-clips.ts';
 import { fake, useTempDirs } from './helpers.ts';
 import type { Storage } from '../lib/storage.ts';
@@ -101,7 +101,7 @@ describe('reolinkTimestamp', () => {
   });
 });
 
-describe('seedUploads', () => {
+describe('seedLocalUploads', () => {
   const now = new Date(2026, 9, 7, 8, 30, 0);
 
   it('writes Reolink-named videos that clip discovery accepts', async () => {
@@ -112,7 +112,7 @@ describe('seedUploads', () => {
     writeImage(imageDir, 'bluejay.jpg');
     writeImage(imageDir, 'nonbird.jpg');
 
-    const results = await seedUploads({ imageDir, uploadDir, count: 2, cameraName: 'Feeder', now });
+    const results = await seedLocalUploads({ imageDir, uploadDir, count: 2, cameraName: 'Feeder', now });
 
     expect(fs.readdirSync(uploadDir).sort()).toEqual([
       'Feeder_00_20261007082000.mp4',
@@ -135,7 +135,7 @@ describe('seedUploads', () => {
     const uploadDir = tempDir();
     for (const name of ['cardinal.jpg', 'bluejay.jpg', 'nonbird.jpg', 'nonebird2.jpg']) writeImage(imageDir, name);
 
-    const results = await seedUploads({ imageDir, uploadDir, count: 6, cameraName: 'Feeder', now });
+    const results = await seedLocalUploads({ imageDir, uploadDir, count: 6, cameraName: 'Feeder', now });
 
     expect(results).toHaveLength(8);
     const birds = results.filter(r => r.isBird).map(r => path.basename(r.imagePath));
@@ -150,7 +150,7 @@ describe('seedUploads', () => {
     const imageDir = tempDir();
     writeImage(imageDir, 'cardinal.jpg');
 
-    const results = await seedUploads({ imageDir, uploadDir: tempDir(), count: 2, cameraName: 'Feeder', now });
+    const results = await seedLocalUploads({ imageDir, uploadDir: tempDir(), count: 2, cameraName: 'Feeder', now });
 
     expect(results.map(r => r.isBird)).toEqual([true, true]);
     expect(console.warn).toHaveBeenCalledWith(expect.stringMatching(/No non-bird images/));
@@ -159,7 +159,7 @@ describe('seedUploads', () => {
   it('throws when the image dir has no bird images', async () => {
     const imageDir = tempDir();
     writeImage(imageDir, 'nonbird.jpg');
-    await expect(seedUploads({ imageDir, uploadDir: tempDir(), count: 1, cameraName: 'Feeder' }))
+    await expect(seedLocalUploads({ imageDir, uploadDir: tempDir(), count: 1, cameraName: 'Feeder' }))
       .rejects.toThrow(/No bird images/);
   });
 });

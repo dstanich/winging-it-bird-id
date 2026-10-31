@@ -1,8 +1,8 @@
 /**
- * Seed the upload directory with short videos made from the test bird photos
- * in ../test-birds/images, for local testing without the camera.
+ * Seed the local upload directory with short videos made from the test bird
+ * photos in ../test-birds/images, for local testing without the camera.
  *
- * Usage: npm run seed:uploads [-- <count>]   (default 5)
+ * Usage: npm run seed:local-uploads [-- <count>]   (default 5)
  *
  * <count> is the number of bird clips; a third as many non-bird clips (at
  * least 1, from non*.jpg images) are added on top.
@@ -11,7 +11,7 @@
 import 'dotenv/config';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { seedUploads } from '../lib/seed-uploads.ts';
+import { seedLocalUploads } from '../lib/seed-local-uploads.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -26,7 +26,7 @@ if (!Number.isInteger(count) || count < 1) {
 }
 
 try {
-  const results = await seedUploads({
+  const results = await seedLocalUploads({
     imageDir: IMAGE_DIR,
     uploadDir: process.env.UPLOAD_DIR || './uploads',
     count,

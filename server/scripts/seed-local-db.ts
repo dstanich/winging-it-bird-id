@@ -4,7 +4,7 @@
  * images drawn from ../test-birds/, for offline local testing without the
  * camera, BirdNET-Go, or Gemini API calls.
  *
- * Usage: npm run seed:db [-- <days>] [--force]   (default 15 days)
+ * Usage: npm run seed:local-db [-- <days>] [--force]   (default 15 days)
  *
  * Writes <DATA_DIR>/bird-data.db (default ./data/bird-data.db) and copies
  * media into <DOWNLOAD_DIR> (default ./downloads). Refuses to overwrite an
@@ -15,7 +15,7 @@ import 'dotenv/config';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { seedDb } from '../lib/seed-db.ts';
+import { seedLocalDb } from '../lib/seed-local-db.ts';
 import type { SQLiteStorage } from '../lib/sqlite-storage.ts';
 import { Storage } from '../lib/storage.ts';
 
@@ -52,7 +52,7 @@ if (fs.existsSync(dbPath)) {
 
 const storage = new Storage();
 try {
-  const result = seedDb(storage, {
+  const result = seedLocalDb(storage, {
     imageDir: IMAGE_DIR,
     audioDir: AUDIO_DIR,
     downloadDir,

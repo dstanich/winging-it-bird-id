@@ -1,7 +1,7 @@
 /**
  * Local-testing helper: turns still bird photos into short Reolink-named
  * videos in the upload directory, so the main loop has real clips to
- * discover and identify without the camera. Used by scripts/seed-uploads.js.
+ * discover and identify without the camera. Used by scripts/seed-local-uploads.ts.
  */
 
 import * as fs from 'fs';
@@ -22,7 +22,7 @@ const VIDEO_DURATION_SECONDS = 3;
 // Gap between generated clip timestamps when no larger cooldown requires more.
 const MIN_SPACING_SECONDS = 300;
 
-export interface SeedUploadsOptions {
+export interface SeedLocalUploadsOptions {
   imageDir: string;
   uploadDir: string;
   /** Bird clips; non-bird clips are added on top. */
@@ -153,7 +153,7 @@ export function imageToVideo(imagePath: string, outputPath: string): Promise<voi
  *
  * @returns Oldest first.
  */
-export async function seedUploads({ imageDir, uploadDir, count, cameraName, cooldownSeconds = 0, now = new Date(), random = Math.random }: SeedUploadsOptions): Promise<SeededClip[]> {
+export async function seedLocalUploads({ imageDir, uploadDir, count, cameraName, cooldownSeconds = 0, now = new Date(), random = Math.random }: SeedLocalUploadsOptions): Promise<SeededClip[]> {
   const images = listImages(imageDir);
   const birdImages = images.filter(image => !isNonBirdImage(image));
   const nonBirdImages = images.filter(isNonBirdImage);

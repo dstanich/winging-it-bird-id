@@ -14,7 +14,7 @@ import {
   nonBirdCount,
   pickRandom,
   reolinkTimestamp,
-} from './seed-uploads.ts';
+} from './seed-local-uploads.ts';
 import type { Storage } from './storage.ts';
 import type { BirdIdentification } from './types.ts';
 
@@ -58,7 +58,7 @@ const AUDIO_SPECIES_MAP: Record<string, AudioSpeciesInfo> = {
   mourningdove: { species: 'Mourning Dove', scientificName: 'Zenaida macroura', speciesCode: 'moudov' },
 };
 
-export interface SeedDbOptions {
+export interface SeedLocalDbOptions {
   imageDir: string;
   audioDir: string;
   downloadDir: string;
@@ -70,7 +70,7 @@ export interface SeedDbOptions {
   random?: () => number;
 }
 
-export interface SeedDbDaySummary {
+export interface SeedLocalDbDaySummary {
   date: string;
   birdClips: number;
   nonBirdClips: number;
@@ -78,8 +78,8 @@ export interface SeedDbDaySummary {
   dailyImagePath: string | null;
 }
 
-export interface SeedDbResult {
-  days: SeedDbDaySummary[];
+export interface SeedLocalDbResult {
+  days: SeedLocalDbDaySummary[];
   totalClips: number;
   totalBirdClips: number;
   totalNonBirdClips: number;
@@ -169,7 +169,7 @@ export function audioToSpeciesInfo(audioPath: string): AudioSpeciesInfo {
  * BirdNET-Go audio detections, species images, and daily images (leaving the
  * most recent day's daily image unset so it appears as PENDING).
  */
-export function seedDb(
+export function seedLocalDb(
   storage: Storage,
   {
     imageDir,
@@ -181,8 +181,8 @@ export function seedDb(
     cameraName = 'Bird',
     now = new Date(),
     random = Math.random,
-  }: SeedDbOptions,
-): SeedDbResult {
+  }: SeedLocalDbOptions,
+): SeedLocalDbResult {
   if (!Number.isInteger(days) || days < 1) {
     throw new Error(`Invalid days "${days}": expected a positive integer`);
   }
@@ -209,7 +209,7 @@ export function seedDb(
   const imageModel = storage.getSettingWithId('ai_image_model');
   const imagePrompt = storage.getSettingWithId('ai_image_prompt');
 
-  const daySummaries: SeedDbDaySummary[] = [];
+  const daySummaries: SeedLocalDbDaySummary[] = [];
   let totalClips = 0;
   let totalBirdClips = 0;
   let totalNonBirdClips = 0;
