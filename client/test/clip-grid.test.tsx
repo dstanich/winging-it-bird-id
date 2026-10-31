@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClipGrid } from "@/app/[date]/clip-grid";
 import type { AudioIdentification, Clip, Identification } from "@/lib/db";
 
@@ -639,5 +639,165 @@ describe("ClipGrid lightbox", () => {
     await user.keyboard("{Escape}");
     await user.click(within(card("video 1")).getByRole("img"));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+});
+
+describe("ClipGrid filter & sort animations (Option 1: FLIP + Scale/Fade)", () => {
+  const rect = (left: number, top: number, width = 260, height = 200): DOMRect =>
+    ({
+      left,
+      top,
+      width,
+      height,
+      right: left + width,
+      bottom: top + height,
+      x: left,
+      y: top,
+      toJSON: () => ({}),
+    }) as DOMRect;
+
+  it("animates exiting cards out (150ms), surviving cards via FLIP reflow (220ms), and entering cards in (200ms)", async () => {
+    const calls: { key: string; keyframes: Keyframe[]; options: KeyframeAnimationOptions; finish: () => void }[] = [];
+    Element.prototype.animate = vi.fn(function (
+      this: HTMLElement,
+      keyframes: Keyframe[] | PropertyIndexedKeyframes | null,
+      options?: number | KeyframeAnimationOptions
+    ) {
+      const anim = {
+        onfinish: null as (() => void) | null,
+        oncancel: null as (() => void) | null,
+        cancel: vi.fn(),
+      };
+      calls.push({
+        key: this.dataset.cardKey ?? `exit:${this.dataset.exitingCard}`,
+        keyframes: keyframes as Keyframe[],
+        options: (typeof options === "object" ? options : { duration: options }) as KeyframeAnimationOptions,
+        finish: () => anim.onfinish?.(),
+      });
+      return anim as unknown as Animation;
+    });
+
+    // Dynamic layout: compute each card's rect from its current DOM index in the grid (3 columns, 280px wide)
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.cardKey && this.parentElement) {
+        const siblings = Array.from(this.parentElement.querySelectorAll<HTMLElement>("[data-card-key]"));
+        const idx = siblings.indexOf(this);
+        if (idx >= 0) {
+          return rect((idx % 3) * 280, 100 + Math.floor(idx / 3) * 220);
+        }
+      }
+      return rect(0, 100, 840, 400);
+    });
+
+    const user = userEvent.setup();
+    renderGrid({
+      clips: [clip(1, "2026-07-04T13:00:00Z"), clip(2, "2026-07-04T15:00:00Z")],
+      audioIdentifications: [audio(1, "2026-07-04T14:00:00Z")],
+    });
+
+    // When filtering to Video only: audio-1 (slot 1) exits, video-1 glides from slot 2 (x=560) to slot 1 (x=280, dx = +280px)
+    await user.click(screen.getByRole("button", { name: /^video/i }));
+
+    // 1. Exiting ghost for audio-1 (150ms scale 1 -> 0.92 & opacity 1 -> 0)
+    const exitCall = calls.find((c) => c.key === "exit:audio-1");
+    expect(exitCall).toBeDefined();
+    expect(exitCall?.options.duration).toBe(150);
+    expect(exitCall?.keyframes).toEqual([
+      { opacity: 1, transform: "scale(1)" },
+      { opacity: 0, transform: "scale(0.92)" },
+    ]);
+    const ghost = document.querySelector("[data-exiting-card='audio-1']");
+    expect(ghost).toBeInTheDocument();
+    expect(ghost?.querySelector("audio")).not.toHaveAttribute("src");
+
+    // 2. Surviving card video-1 FLIP reflows (220ms translate3d(280px, 0px, 0) -> translate3d(0, 0, 0))
+    const flipCall = calls.find((c) => c.key === "video-1");
+    expect(flipCall).toBeDefined();
+    expect(flipCall?.options.duration).toBe(220);
+    expect(flipCall?.keyframes).toEqual([
+      { transform: "translate3d(280px, 0px, 0)" },
+      { transform: "translate3d(0, 0, 0)" },
+    ]);
+
+    // Finishing the exit animation removes the ghost node
+    exitCall?.finish();
+    expect(document.querySelector("[data-exiting-card='audio-1']")).not.toBeInTheDocument();
+
+    // 3. Clicking All brings audio-1 back with a 200ms scale/fade enter animation
+    calls.length = 0;
+    await user.click(screen.getByRole("button", { name: /^all/i }));
+
+    const enterCall = calls.find((c) => c.key === "audio-1");
+    expect(enterCall).toBeDefined();
+    expect(enterCall?.options.duration).toBe(200);
+    expect(enterCall?.keyframes).toEqual([
+      { opacity: 0, transform: "scale(0.92)" },
+      { opacity: 1, transform: "scale(1)" },
+    ]);
+
+    delete (Element.prototype as Partial<Element>).animate;
+  });
+
+  it("clamps long vertical jumps on mobile (> 420px) to a local slide+fade instead of streaking", async () => {
+    const calls: { key: string; keyframes: Keyframe[]; options: KeyframeAnimationOptions }[] = [];
+    Element.prototype.animate = vi.fn(function (
+      this: HTMLElement,
+      keyframes: Keyframe[] | PropertyIndexedKeyframes | null,
+      options?: number | KeyframeAnimationOptions
+    ) {
+      calls.push({
+        key: this.dataset.cardKey ?? "",
+        keyframes: keyframes as Keyframe[],
+        options: (typeof options === "object" ? options : { duration: options }) as KeyframeAnimationOptions,
+      });
+      return { cancel: vi.fn(), onfinish: null, oncancel: null } as unknown as Animation;
+    });
+
+    // Simulate a 1-column mobile feed where each card is 800px apart vertically
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.cardKey && this.parentElement) {
+        const siblings = Array.from(this.parentElement.querySelectorAll<HTMLElement>("[data-card-key]"));
+        const idx = siblings.indexOf(this);
+        if (idx >= 0) {
+          return rect(0, 100 + idx * 800);
+        }
+      }
+      return rect(0, 100, 360, 1200);
+    });
+
+    const user = userEvent.setup();
+    renderGrid({
+      clips: [clip(1, "2026-07-04T13:00:00Z")],
+      audioIdentifications: [audio(1, "2026-07-04T14:00:00Z")],
+    });
+
+    await user.click(screen.getByRole("button", { name: /^video/i }));
+
+    const clampedCall = calls.find((c) => c.key === "video-1");
+    expect(clampedCall).toBeDefined();
+    expect(clampedCall?.options.duration).toBe(200);
+    expect(clampedCall?.keyframes).toEqual([
+      { opacity: 0, transform: "translate3d(0, 28px, 0) scale(0.95)" },
+      { opacity: 1, transform: "translate3d(0, 0, 0) scale(1)" },
+    ]);
+
+    delete (Element.prototype as Partial<Element>).animate;
+  });
+
+  it("skips card animations when prefers-reduced-motion: reduce is active", async () => {
+    const animateSpy = vi.fn();
+    Element.prototype.animate = animateSpy;
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+
+    const user = userEvent.setup();
+    renderGrid({
+      clips: [clip(1, "2026-07-04T13:00:00Z")],
+      audioIdentifications: [audio(1, "2026-07-04T14:00:00Z")],
+    });
+
+    await user.click(screen.getByRole("button", { name: /^video/i }));
+    expect(animateSpy).not.toHaveBeenCalled();
+
+    delete (Element.prototype as Partial<Element>).animate;
   });
 });

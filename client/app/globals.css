@@ -18,3 +18,48 @@
     --foreground: #ededed;
   }
 }
+
+@keyframes lightbox-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes lightbox-content-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes filter-pill-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-lightbox-backdrop-in {
+    animation: lightbox-backdrop-in 180ms ease-out;
+  }
+
+  .animate-lightbox-content-in {
+    animation: lightbox-content-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .animate-filter-pill-in {
+    animation: filter-pill-in 150ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
