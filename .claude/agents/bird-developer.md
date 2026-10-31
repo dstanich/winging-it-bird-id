@@ -2,9 +2,9 @@
 name: bird-developer
 description: >-
   End-to-end autonomous developer agent for winging-it-bird-id. Takes a task
-  requirement and acceptance criteria, works in an isolated dev/... branch and
-  worktree, implements and tests the solution, runs the bird-reviewer validation
-  loop, and prepares or creates the GitHub PR.
+  requirement and acceptance criteria, works in an isolated dev/... branch in
+  an in-repo .worktrees/<slug> worktree, implements and tests the solution, runs the
+  bird-reviewer validation loop, and prepares or creates the GitHub PR.
 skills:
   - bird-developer
 ---

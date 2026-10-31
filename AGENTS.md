@@ -72,6 +72,7 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 ├── .github/workflows/
 │   ├── ci.yml                     # PR/push to main: server tests, client lint/test/build, publish-script check
 │   └── docker.yml                 # PR/push to main touching server/ or client/: builds both Docker images (no push)
+├── .worktrees/                    # Isolated in-repo git worktrees for agent tasks (.worktrees/<slug>, git-ignored)
 ├── scripts/
 │   └── setup-worktree.sh          # Idempotent local/worktree bootstrap: installs/clones node_modules, runs seed:local-db, links client/public/downloads (optional --link-env, --days <n>)
 ├── test-birds/                    # Committed test media: images/ (bird photos + non*.jpg non-bird photos), audio/ (wav clips), daily/ (placeholder daily AI images)

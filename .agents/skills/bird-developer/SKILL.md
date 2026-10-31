@@ -3,14 +3,14 @@ name: bird-developer
 description: >-
   End-to-end autonomous development workflow for winging-it-bird-id. Use this
   skill when given a feature request, bug fix, or task to take from requirement
-  and acceptance criteria through isolated dev/... worktree setup,
+  and acceptance criteria through isolated dev/... in-repo worktree setup (.worktrees/<slug>),
   implementation, testing, bird-reviewer validation loops, and PR preparation or
   creation.
 ---
 
 # Bird Developer (`bird-developer`)
 
-`bird-developer` takes a task requirement and turns it into tested, reviewed, and committed code on an isolated `dev/<slug>` branch/worktree, producing either a ready-to-review PR draft in the session (default) or a live GitHub Pull Request (when `--create-pr` is specified).
+`bird-developer` takes a task requirement and turns it into tested, reviewed, and committed code on an isolated `dev/<slug>` branch inside `<repo-root>/.worktrees/<slug>`, producing either a ready-to-review PR draft in the session (default) or a live GitHub Pull Request (when `--create-pr` is specified).
 
 ---
 
@@ -31,24 +31,40 @@ Accept the following inputs from the user prompt (in structured flags or natural
 
 ### Step 1: Worktree & Branch Isolation (`dev/<slug>`)
 
-Every `bird-developer` task runs on a branch named `dev/<slug>` inside an isolated git worktree so multiple tasks can run concurrently without conflicting.
+Every `bird-developer` task runs on a branch named `dev/<slug>` inside an isolated in-repo git worktree located at `.worktrees/<slug>` so multiple tasks can run concurrently without conflicting.
+
+> [!IMPORTANT]
+> Always enforce the in-repo worktree location (`<repo-root>/.worktrees/<slug>`). Never develop directly in the primary checkout and never reuse or create worktrees in external tool directories (such as `~/.gemini/antigravity/worktrees/` or other user-directory paths). This guarantees a consistent, predictable worktree location across Antigravity, Claude Code, and manual developer workflows.
 
 1. **Derive `<slug>`**: Pick a short, descriptive kebab-case slug for the task (e.g. `species-filter-pill` → branch `dev/species-filter-pill`).
-2. **Check whether you are already in a clean, dedicated worktree**:
-   - In a linked git worktree (such as one created by Antigravity, Claude Code `--worktree`, or `git worktree add`), `.git` at the repo root is a **file** (`[ -f .git ]`) rather than a directory (`[ -d .git ]`).
-   - **If `[ -f .git ]` and the worktree has no commits/changes from another task** (`git status --porcelain` is empty and `git rev-list --count main..HEAD` is `0`):
-     - Reuse the current worktree.
-     - Ensure your working branch is named `dev/<slug>`:
-       - If currently on a freshly created temporary branch (not `main`), rename it: `git branch -M dev/<slug>`
-       - If on `main` (or detached HEAD), create and switch to it: `git checkout -b dev/<slug>`
-   - **Otherwise (in the primary checkout `[ -d .git ]`, or the current worktree already contains another task's work)**:
-     - Do **not** develop directly in the primary checkout or mix two tasks in the same worktree.
-     - Create a new worktree under `.worktrees/<slug>` (which is git-ignored) branched from `main`:
+2. **Resolve the Repository Root & Target Worktree Path**:
+   - Determine the main repository root (works reliably from the primary checkout, linked worktrees, or external agent directories):
+     ```bash
+     GIT_COMMON_DIR="$(git rev-parse --git-common-dir)"
+     REPO_ROOT="$(cd "$GIT_COMMON_DIR/.." && pwd)"
+     WORKTREE_DIR="$REPO_ROOT/.worktrees/<slug>"
+     ```
+3. **Ensure the Dedicated In-Repo Worktree Exists & Switch to It**:
+   - **If the current working directory (`pwd -P`) is already `$WORKTREE_DIR`**:
+     - Verify it is clean and on branch `dev/<slug>`.
+   - **If the current working directory is anywhere else** (e.g. primary checkout, external tool worktree in `~/.gemini/...`, or another worktree):
+     - Prune stale worktree references:
        ```bash
-       git worktree add -b dev/<slug> .worktrees/<slug> main
+       git -C "$REPO_ROOT" worktree prune
        ```
-     - Run all subsequent commands (including `./scripts/setup-worktree.sh`) inside `.worktrees/<slug>`.
-3. **Bootstrap the worktree**:
+     - If `$WORKTREE_DIR` already exists:
+       - Ensure it is on `dev/<slug>`: `git -C "$WORKTREE_DIR" checkout dev/<slug>`
+     - If `$WORKTREE_DIR` does not exist:
+       - If branch `dev/<slug>` already exists locally or remotely:
+         ```bash
+         git -C "$REPO_ROOT" worktree add "$WORKTREE_DIR" dev/<slug>
+         ```
+       - Otherwise, create branch `dev/<slug>` from `main`:
+         ```bash
+         git -C "$REPO_ROOT" worktree add -b dev/<slug> "$WORKTREE_DIR" main
+         ```
+     - **Change into `$WORKTREE_DIR`**: All subsequent commands (bootstrapping, file editing, running tests, typechecks, linters, git commits, and code review) **MUST** be executed inside `$WORKTREE_DIR`.
+4. **Bootstrap the worktree**:
    - Ensure dependencies, the local seeded SQLite database, and `client/public/downloads` are ready:
      ```bash
      ./scripts/setup-worktree.sh
@@ -91,17 +107,20 @@ Every `bird-developer` task runs on a branch named `dev/<slug>` inside an isolat
      ```bash
      node --check client/scripts/scheduled-publish/index.js
      ```
-4. **Commit with User as Author + Agent as Co-Author**:
+4. **Commit with Agent as Author**:
    - Organize work into logical commits using Conventional Commits with a scope (`feat(server): ...`, `fix(client): ...`, `docs: ...`, `chore: ...`). Multiple commits are fine when they aid clarity, but do not go overboard (typically 1–3 commits for a task).
-   - Keep the repository's configured git user (`git config user.name` / `git config user.email`) as the commit author and append a `Co-authored-by:` trailer for the active coding agent:
+   - The commit must come from the active coding agent (author) instead of the user; the user will then review the PR and merge it as themselves so it will ultimately be authored by both:
      - In **Antigravity**:
-       ```text
-       Co-authored-by: Antigravity <noreply@google.com>
+       ```bash
+       git commit --author="Antigravity <noreply@google.com>" -m "..."
        ```
+       (or `git -c user.name="Antigravity" -c user.email="noreply@google.com" commit -m "..."`)
      - In **Claude Code**:
-       ```text
-       Co-authored-by: Claude <noreply@anthropic.com>
+       ```bash
+       git commit --author="Claude <noreply@anthropic.com>" -m "..."
        ```
+       (or `git -c user.name="Claude" -c user.email="noreply@anthropic.com" commit -m "..."`)
+   - Do not include a `Co-authored-by:` trailer for either party; author attribution comes from the agent's commit and the user's PR review and merge.
 
 ---
 
@@ -116,7 +135,7 @@ After initial implementation, tests, docs, and commits are complete, run the `bi
    - Pass `bird-reviewer`:
      - The original requirement and acceptance criteria
      - The list of assumptions made
-     - The worktree path and branch name (`dev/<slug>`)
+     - The worktree path (`$WORKTREE_DIR` / `.worktrees/<slug>`) and branch name (`dev/<slug>`)
      - The round number (`Round 1 of 3`, etc.)
 2. **Process Review Findings**:
    - `bird-reviewer` returns findings with:
@@ -128,7 +147,7 @@ After initial implementation, tests, docs, and commits are complete, run the `bi
 3. **Iterate if Needed**:
    - **If zero findings have `Recommendation: fix`**: The review loop is complete; proceed to Step 5.
    - **If one or more findings have `Recommendation: fix`**:
-     - Address the `fix` items, re-run verification (`typecheck`, `test`, `lint`, `build`), and commit the fixes (with the `Co-authored-by:` trailer).
+     - Address the `fix` items, re-run verification (`typecheck`, `test`, `lint`, `build`), and commit the fixes (authored by the agent as in Step 3).
      - Re-run `bird-reviewer` on the updated branch state.
    - **Loop Cap (3 Rounds Maximum)**:
      - Run at most **3 rounds** of `bird-reviewer`. If any items still remain after Round 3 (or if a recommendation was intentionally skipped because it conflicted with explicit requirements), stop looping and document those items in the PR / session summary.
@@ -167,7 +186,7 @@ Format the Pull Request using this exact structure:
 
 - **Default (`--create-pr` NOT specified)**:
   - **Do NOT push the branch or create the GitHub PR.**
-  - Present the proposed **PR Title**, the rendered **PR Body** (in a markdown block so it is easy to copy or inspect), the worktree/branch location, and the exact commands to publish it when ready:
+  - Present the proposed **PR Title**, the rendered **PR Body** (in a markdown block so it is easy to copy or inspect), the worktree/branch location (`$WORKTREE_DIR` / `.worktrees/<slug>` on branch `dev/<slug>`), and the exact commands to publish it when ready:
     ```bash
     git push -u origin dev/<slug>
     gh pr create --base main --head dev/<slug> --title "<PR Title>" --body "<PR Body>"
