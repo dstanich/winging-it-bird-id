@@ -48,7 +48,7 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   │   ├── settings/page.tsx      # Two cards: active identification model/prompt and daily image model/prompt
 │   │   └── [date]/
 │   │       ├── page.tsx           # Date detail: summary (video + audio stats + daily AI image / PENDING placeholder) + combined feed
-│   │       └── clip-grid.tsx      # Client component: merged video/audio feed, video/audio toggles, non-bird filter, time/species sort, image lightbox
+│   │       └── clip-grid.tsx      # Client component: merged video/audio feed, unified filter/sort toolbar, active filter pills, image lightbox
 │   ├── components/                # Shared across routes
 │   │   ├── lightbox.tsx           # Client components: Lightbox image modal (portaled to <body>) + ZoomableImage (image that opens itself) + LightboxLink (inline link-styled text that opens an image)
 │   │   ├── site-header.tsx        # Server component: sticky site-wide header bar (logo + title → home, GitHub icon), rendered by layout.tsx

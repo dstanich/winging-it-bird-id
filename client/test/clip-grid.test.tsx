@@ -51,9 +51,9 @@ function card(timeLabel: string): HTMLElement {
   return screen.getByText(timeLabel).closest(".rounded-lg") as HTMLElement;
 }
 
-/** Ticks the "Include non-birds" checkbox so unidentified/non-bird items render. */
+/** Clicks the "Include non-birds & unidentified" toggle button so unidentified/non-bird items render. */
 async function includeNonBirds() {
-  await userEvent.setup().click(screen.getByRole("checkbox", { name: /include non-birds/i }));
+  await userEvent.setup().click(screen.getByRole("button", { name: /include non-birds/i }));
 }
 
 /** Time labels of every rendered card, in feed order. */
@@ -81,51 +81,50 @@ describe("ClipGrid feed", () => {
   });
 });
 
-describe("ClipGrid toggles", () => {
+describe("ClipGrid media filter", () => {
   const data = {
-    clips: [clip(1, "2026-07-04T13:00:00Z")],
+    clips: [clip(1, "2026-07-04T13:00:00Z"), clip(2, "2026-07-04T15:00:00Z")],
     audioIdentifications: [audio(1, "2026-07-04T14:00:00Z")],
   };
 
-  it("shows both video and audio by default", () => {
+  function mediaGroup() {
+    return screen.getByRole("group", { name: "Detection types to show" });
+  }
+
+  it("selects All by default and displays counts for All, Video, and Audio", () => {
     renderGrid(data);
-    expect(screen.getByRole("button", { name: "Video" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Audio" })).toHaveAttribute("aria-pressed", "true");
-    expect(feedOrder()).toEqual(["audio 1", "video 1"]);
+    const group = within(mediaGroup());
+
+    expect(group.getByRole("button", { name: /all \(3\)/i })).toHaveAttribute("aria-pressed", "true");
+    expect(group.getByRole("button", { name: /video \(2\)/i })).toHaveAttribute("aria-pressed", "false");
+    expect(group.getByRole("button", { name: /audio \(1\)/i })).toHaveAttribute("aria-pressed", "false");
+    expect(feedOrder()).toEqual(["video 2", "audio 1", "video 1"]);
   });
 
-  it("hides and re-shows video items", async () => {
+  it("filters to video only and back to all", async () => {
     const user = userEvent.setup();
     renderGrid(data);
-    const button = screen.getByRole("button", { name: "Video" });
+    const group = within(mediaGroup());
 
-    await user.click(button);
-    expect(button).toHaveAttribute("aria-pressed", "false");
+    await user.click(group.getByRole("button", { name: /video/i }));
+    expect(group.getByRole("button", { name: /video/i })).toHaveAttribute("aria-pressed", "true");
+    expect(group.getByRole("button", { name: /all/i })).toHaveAttribute("aria-pressed", "false");
+    expect(feedOrder()).toEqual(["video 2", "video 1"]);
+    expect(screen.getByText("2 items")).toBeInTheDocument();
+
+    await user.click(group.getByRole("button", { name: /all/i }));
+    expect(feedOrder()).toEqual(["video 2", "audio 1", "video 1"]);
+  });
+
+  it("filters to audio only", async () => {
+    const user = userEvent.setup();
+    renderGrid(data);
+    const group = within(mediaGroup());
+
+    await user.click(group.getByRole("button", { name: /audio/i }));
+    expect(group.getByRole("button", { name: /audio/i })).toHaveAttribute("aria-pressed", "true");
     expect(feedOrder()).toEqual(["audio 1"]);
     expect(screen.getByText("1 item")).toBeInTheDocument();
-
-    await user.click(button);
-    expect(button).toHaveAttribute("aria-pressed", "true");
-    expect(feedOrder()).toEqual(["audio 1", "video 1"]);
-  });
-
-  it("hides audio items", async () => {
-    const user = userEvent.setup();
-    renderGrid(data);
-
-    await user.click(screen.getByRole("button", { name: "Audio" }));
-    expect(screen.getByRole("button", { name: "Audio" })).toHaveAttribute("aria-pressed", "false");
-    expect(feedOrder()).toEqual(["video 1"]);
-  });
-
-  it("shows nothing when both are hidden", async () => {
-    const user = userEvent.setup();
-    renderGrid(data);
-
-    await user.click(screen.getByRole("button", { name: "Video" }));
-    await user.click(screen.getByRole("button", { name: "Audio" }));
-    expect(feedOrder()).toEqual([]);
-    expect(screen.getByText("0 items")).toBeInTheDocument();
   });
 });
 
@@ -150,9 +149,11 @@ describe("ClipGrid non-bird filter", () => {
     ],
   };
 
-  it("is unchecked by default", () => {
+  it("is off by default and shows the non-bird count", () => {
     renderGrid(data);
-    expect(screen.getByRole("checkbox", { name: /include non-birds/i })).not.toBeChecked();
+    const button = screen.getByRole("button", { name: /include non-birds/i });
+    expect(button).toHaveAttribute("aria-pressed", "false");
+    expect(button).toHaveTextContent("(6)");
   });
 
   it("shows only items with an identified bird species by default", () => {
@@ -162,17 +163,20 @@ describe("ClipGrid non-bird filter", () => {
     expect(screen.getByText(/6 without an identified bird hidden/)).toBeInTheDocument();
   });
 
-  it("shows everything when checked, and filters again when unchecked", async () => {
+  it("shows everything when toggled on, and filters again via toggle or active pill", async () => {
     const user = userEvent.setup();
     renderGrid(data);
-    const checkbox = screen.getByRole("checkbox", { name: /include non-birds/i });
+    const button = screen.getByRole("button", { name: /include non-birds/i });
 
-    await user.click(checkbox);
-    expect(checkbox).toBeChecked();
+    await user.click(button);
+    expect(button).toHaveAttribute("aria-pressed", "true");
     expect(feedOrder()).toHaveLength(9);
     expect(screen.queryByText(/hidden/)).not.toBeInTheDocument();
 
-    await user.click(checkbox);
+    // Active filter pill is rendered and can remove the filter
+    const removePill = screen.getByRole("button", { name: /remove non-birds and unidentified filter/i });
+    await user.click(removePill);
+    expect(button).toHaveAttribute("aria-pressed", "false");
     expect(feedOrder()).toEqual(["video 6", "audio 1", "video 1"]);
   });
 
@@ -180,7 +184,7 @@ describe("ClipGrid non-bird filter", () => {
     const user = userEvent.setup();
     renderGrid(data);
 
-    await user.click(screen.getByRole("button", { name: "Video" }));
+    await user.click(screen.getByRole("button", { name: /^audio/i }));
     expect(screen.getByText(/2 without an identified bird hidden/)).toBeInTheDocument();
   });
 
@@ -190,13 +194,185 @@ describe("ClipGrid non-bird filter", () => {
   });
 });
 
+describe("ClipGrid species filter", () => {
+  const fixtures = () => ({
+    clips: [
+      clip(1, "2026-07-04T11:00:00Z", [ident({ species: "northern cardinal" })]),
+      clip(2, "2026-07-04T12:00:00Z", [ident({ species: "blue jay" })]),
+      clip(3, "2026-07-04T13:00:00Z", [ident({ isBird: false, species: null, nonBirdSpecies: "squirrel" })]),
+      clip(4, "2026-07-04T14:00:00Z", [ident({ species: "unknown bird" })]),
+      clip(5, "2026-07-04T15:00:00Z", [
+        ident({ isBird: false, species: null, nonBirdSpecies: "squirrel" }),
+        ident({ species: "house finch" }),
+      ]),
+    ],
+    audioIdentifications: [
+      audio(1, "2026-07-04T11:30:00Z", { species: "American Robin" }),
+      audio(2, "2026-07-04T12:30:00Z", { species: "Blue Jay" }),
+      audio(3, "2026-07-04T13:30:00Z", { species: "Unidentified Sparrow" }),
+    ],
+  });
+
+  function speciesButton() {
+    return screen.getByRole("button", { name: /^species:/i });
+  }
+
+  async function openSpeciesMenu() {
+    const user = userEvent.setup();
+    await user.click(speciesButton());
+    return user;
+  }
+
+  it("shows 'All species' with menu closed by default", () => {
+    renderGrid(fixtures());
+    const button = speciesButton();
+
+    expect(button).toHaveTextContent("All species");
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(button).not.toBeDisabled();
+    expect(screen.queryByRole("group", { name: "Filter by species" })).not.toBeInTheDocument();
+  });
+
+  it("disables the button when there are no known bird species on the day", () => {
+    renderGrid({
+      clips: [clip(1, "2026-07-04T11:00:00Z", [ident({ isBird: false, species: null, nonBirdSpecies: "squirrel" })])],
+      audioIdentifications: [audio(1, "2026-07-04T12:00:00Z", { species: "Unidentified" })],
+    });
+
+    expect(speciesButton()).toBeDisabled();
+  });
+
+  it("lists unique known bird species from video and audio, sorted A–Z with item counts", async () => {
+    renderGrid(fixtures());
+    await openSpeciesMenu();
+
+    expect(speciesButton()).toHaveAttribute("aria-expanded", "true");
+    const menu = screen.getByRole("group", { name: "Filter by species" });
+    const checkboxes = within(menu).getAllByRole("checkbox");
+    expect(checkboxes.map((cb) => cb.closest("label")?.textContent)).toEqual([
+      "American Robin1",
+      "Blue Jay2",
+      "House Finch1",
+      "Northern Cardinal1",
+    ]);
+    for (const cb of checkboxes) {
+      expect(cb).not.toBeChecked();
+    }
+    expect(within(menu).queryByRole("button", { name: /clear selection/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps all species in the menu even when filtered to Audio or Video only", async () => {
+    const user = userEvent.setup();
+    renderGrid(fixtures());
+
+    await user.click(screen.getByRole("button", { name: /^audio/i }));
+    await user.click(speciesButton());
+    const menu = screen.getByRole("group", { name: "Filter by species" });
+
+    expect(within(menu).getByRole("checkbox", { name: /american robin/i })).toBeInTheDocument();
+    expect(within(menu).getByRole("checkbox", { name: /northern cardinal/i })).toBeInTheDocument();
+  });
+
+  it("filters items when selecting species, shows removable active pills, and restores all when cleared", async () => {
+    renderGrid(fixtures());
+    const user = await openSpeciesMenu();
+    const menu = screen.getByRole("group", { name: "Filter by species" });
+
+    // Select Blue Jay (matches both video 2 and audio 2, case-insensitively)
+    await user.click(within(menu).getByRole("checkbox", { name: /blue jay/i }));
+    expect(speciesButton()).toHaveTextContent("1 selected");
+    expect(feedOrder()).toEqual(["audio 2", "video 2"]);
+    expect(screen.getByText("2 items")).toBeInTheDocument();
+
+    // Also select House Finch (matches multi-identification video 5)
+    await user.click(within(menu).getByRole("checkbox", { name: /house finch/i }));
+    expect(speciesButton()).toHaveTextContent("2 selected");
+    expect(feedOrder()).toEqual(["video 5", "audio 2", "video 2"]);
+    expect(screen.getByText("3 items")).toBeInTheDocument();
+
+    // Remove Blue Jay via its active filter pill
+    await user.click(screen.getByRole("button", { name: "Remove Blue Jay filter" }));
+    expect(speciesButton()).toHaveTextContent("1 selected");
+    expect(feedOrder()).toEqual(["video 5"]);
+
+    // Remove House Finch via its active filter pill
+    await user.click(screen.getByRole("button", { name: "Remove House Finch filter" }));
+    expect(speciesButton()).toHaveTextContent("All species");
+    expect(feedOrder()).toEqual(["video 5", "audio 2", "video 2", "audio 1", "video 1"]);
+  });
+
+  it("clears all selected species via 'Clear selection' in menu or 'Reset filters'", async () => {
+    renderGrid(fixtures());
+    const user = await openSpeciesMenu();
+    const menu = screen.getByRole("group", { name: "Filter by species" });
+
+    await user.click(within(menu).getByRole("checkbox", { name: /american robin/i }));
+    await user.click(within(menu).getByRole("checkbox", { name: /northern cardinal/i }));
+    expect(speciesButton()).toHaveTextContent("2 selected");
+    expect(feedOrder()).toEqual(["audio 1", "video 1"]);
+
+    await user.click(within(menu).getByRole("button", { name: /clear selection/i }));
+    expect(speciesButton()).toHaveTextContent("All species");
+    expect(within(menu).queryByRole("button", { name: /clear selection/i })).not.toBeInTheDocument();
+    expect(feedOrder()).toEqual(["video 5", "audio 2", "video 2", "audio 1", "video 1"]);
+
+    // Select again + change media filter, then use Reset filters
+    await user.click(within(menu).getByRole("checkbox", { name: /blue jay/i }));
+    await user.click(screen.getByRole("button", { name: /^video/i }));
+    expect(feedOrder()).toEqual(["video 2"]);
+
+    await user.click(screen.getByRole("button", { name: /reset filters/i }));
+    expect(speciesButton()).toHaveTextContent("All species");
+    expect(feedOrder()).toEqual(["video 5", "audio 2", "video 2", "audio 1", "video 1"]);
+  });
+
+  it("works additively with Include non-birds & unidentified when a species is selected", async () => {
+    const user = userEvent.setup();
+    renderGrid(fixtures());
+
+    await user.click(screen.getByRole("button", { name: /include non-birds/i }));
+    expect(feedOrder()).toHaveLength(8);
+
+    await user.click(speciesButton());
+    const menu = screen.getByRole("group", { name: "Filter by species" });
+    await user.click(within(menu).getByRole("checkbox", { name: /northern cardinal/i }));
+
+    // Shows Northern Cardinal (video 1) PLUS non-bird/unidentified items (video 4, audio 3, video 3)
+    expect(feedOrder()).toEqual(["video 4", "audio 3", "video 3", "video 1"]);
+    expect(screen.getByText("4 items")).toBeInTheDocument();
+  });
+
+  it("closes the menu when clicking the button again, clicking outside, or pressing Escape", async () => {
+    renderGrid(fixtures());
+    const user = await openSpeciesMenu();
+    expect(screen.getByRole("group", { name: "Filter by species" })).toBeInTheDocument();
+
+    // Toggle closed via button
+    await user.click(speciesButton());
+    expect(screen.queryByRole("group", { name: "Filter by species" })).not.toBeInTheDocument();
+
+    // Reopen and close via Escape (ignoring other keys)
+    await user.click(speciesButton());
+    await user.keyboard("a");
+    expect(screen.getByRole("group", { name: "Filter by species" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("group", { name: "Filter by species" })).not.toBeInTheDocument();
+
+    // Reopen and close by clicking outside
+    await user.click(speciesButton());
+    expect(screen.getByRole("group", { name: "Filter by species" })).toBeInTheDocument();
+    await user.click(document.body);
+    expect(screen.queryByRole("group", { name: "Filter by species" })).not.toBeInTheDocument();
+  });
+});
+
 describe("ClipGrid sorting", () => {
-  /** Picks a sort option from the "Sort by" dropdown. */
+  function sortGroup() {
+    return screen.getByRole("group", { name: "Sort order" });
+  }
+
   async function sortBy(label: RegExp) {
-    await userEvent.setup().selectOptions(
-      screen.getByRole("combobox", { name: /sort by/i }),
-      screen.getByRole("option", { name: label })
-    );
+    await userEvent.setup().click(within(sortGroup()).getByRole("button", { name: label }));
   }
 
   const fixtures = () => ({
@@ -215,7 +391,8 @@ describe("ClipGrid sorting", () => {
   it("sorts by time by default", () => {
     renderGrid(fixtures());
 
-    expect(screen.getByRole("combobox", { name: /sort by/i })).toHaveValue("time");
+    expect(within(sortGroup()).getByRole("button", { name: /newest/i })).toHaveAttribute("aria-pressed", "true");
+    expect(within(sortGroup()).getByRole("button", { name: /species/i })).toHaveAttribute("aria-pressed", "false");
     expect(feedOrder()).toEqual(["video 4", "audio 2", "video 2", "audio 1", "video 1"]);
   });
 
@@ -223,6 +400,7 @@ describe("ClipGrid sorting", () => {
     renderGrid(fixtures());
     await sortBy(/species/i);
 
+    expect(within(sortGroup()).getByRole("button", { name: /species/i })).toHaveAttribute("aria-pressed", "true");
     expect(feedOrder()).toEqual(["audio 1", "audio 2", "video 2", "video 4", "video 1"]);
   });
 
@@ -254,7 +432,7 @@ describe("ClipGrid sorting", () => {
   it("can switch back to time order", async () => {
     renderGrid(fixtures());
     await sortBy(/species/i);
-    await sortBy(/time/i);
+    await sortBy(/newest/i);
 
     expect(feedOrder()).toEqual(["video 4", "audio 2", "video 2", "audio 1", "video 1"]);
   });
