@@ -47,7 +47,7 @@ See `server/.env.example` for defaults (never read `server/.env` directly):
 
 Notes:
 - `FTP_PASV_URL` must be the LAN IP of the host running the server (required for passive-mode transfers).
-- `DOWNLOAD_DIR` has no code default (unlike `DATA_DIR` → `./data` and `UPLOAD_DIR` → `./uploads`), so `initializeApp()` throws if it's unset — keep it in `.env`.
+- `DATA_DIR` (`./data`), `DOWNLOAD_DIR` (`./downloads`), and `UPLOAD_DIR` (`./uploads`) all default to relative paths in code, so local scripts and `npm start` smoke checks work without a `.env` file.
 - When adding an env var, update `server/.env.example`, `README.md`, and this file.
 
 ## Server Conventions

@@ -1,12 +1,30 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/setup-worktree.sh"
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
+      "Bash(./scripts/setup-worktree.sh)",
+      "Bash(./scripts/setup-worktree.sh:*)",
       "Bash(npm test)",
       "Bash(npm test:*)",
       "Bash(npm run lint)",
       "Bash(npm run build)",
       "Bash(npm run typecheck)",
+      "Bash(npm run seed:local-db)",
+      "Bash(npm run seed:local-db:*)",
+      "Bash(npm run seed:local-uploads)",
+      "Bash(npm run seed:local-uploads:*)",
       "Bash(npm install)",
       "Bash(npm ci)",
       "Bash(git status:*)",

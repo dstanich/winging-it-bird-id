@@ -72,11 +72,13 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 ├── .github/workflows/
 │   ├── ci.yml                     # PR/push to main: server tests, client lint/test/build, publish-script check
 │   └── docker.yml                 # PR/push to main touching server/ or client/: builds both Docker images (no push)
+├── scripts/
+│   └── setup-worktree.sh          # Idempotent local/worktree bootstrap: installs/clones node_modules, runs seed:local-db, links client/public/downloads (optional --link-env, --days <n>)
 ├── test-birds/                    # Committed test media from the real feeder: images/ (bird photos + non*.jpg non-bird photos for seed:local-uploads), audio/ (wav clips)
 ├── .agents/
-│   └── hooks.json                 # Antigravity PreToolUse hook blocking reads of server/.env and client/.env
+│   └── hooks.json                 # Antigravity hooks: SessionStart worktree bootstrap + PreToolUse blocking reads of server/.env and client/.env
 ├── .claude/
-│   ├── settings.json              # Shared Claude Code permissions (npm test/lint/build/typecheck/install/ci + read-only git/sqlite allowed; .env reads denied)
+│   ├── settings.json              # Shared Claude Code config: SessionStart worktree bootstrap hook + permissions (npm/git/sqlite allowed; .env reads denied)
 │   └── launch.json                # Claude Code preview config: client dev server on :3000
 ├── docker-compose.yml             # Production deploy: server + publish containers, external named volumes, env from server/.env + client/.env
 ├── .nvmrc                         # lts/krypton (Node 24) for local dev; Docker images and CI also use Node 24
@@ -92,6 +94,13 @@ Any change that alters what `AGENTS.md`, `server/AGENTS.md`, or `client/AGENTS.m
 There is no root-level `package.json` — `server/`, `client/`, and `client/scripts/scheduled-publish/` each manage their own dependencies.
 
 ## Commands
+
+### Worktree / Local Bootstrap (repo root)
+
+```bash
+./scripts/setup-worktree.sh              # Idempotent: clones/installs node_modules in all 3 packages, seeds server/data/bird-data.db (15 days), links client/public/downloads (also runs automatically on SessionStart in Antigravity and Claude Code)
+./scripts/setup-worktree.sh --link-env   # Also symlinks server/.env and client/.env from the main worktree for manual live testing
+```
 
 ### Server (`cd server`)
 
