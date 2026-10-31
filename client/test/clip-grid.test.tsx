@@ -436,6 +436,72 @@ describe("ClipGrid sorting", () => {
 
     expect(feedOrder()).toEqual(["video 4", "audio 2", "video 2", "audio 1", "video 1"]);
   });
+
+  it("shows species group titles, full-row headers, and separators only when sorting by species", async () => {
+    renderGrid(fixtures());
+
+    // Hidden when sorting by time (default)
+    expect(screen.queryAllByRole("heading", { level: 3 })).toHaveLength(0);
+    expect(screen.queryAllByRole("separator")).toHaveLength(0);
+
+    await sortBy(/species/i);
+
+    const headings = screen.getAllByRole("heading", { level: 3 });
+    expect(headings.map((h) => h.textContent)).toEqual([
+      "American Robin",
+      "Blue Jay",
+      "Northern Cardinal",
+    ]);
+
+    // Every group header spans all grid columns so each species starts on a new row of cards
+    for (const heading of headings) {
+      expect(heading.parentElement).toHaveClass("col-span-full");
+    }
+
+    // Visual separators appear between species groups (every group after the first)
+    const separators = screen.getAllByRole("separator");
+    expect(separators).toHaveLength(2);
+    expect(headings[0].parentElement?.querySelector("hr")).toBeNull();
+    expect(headings[1].parentElement?.querySelector("hr")).toBe(separators[0]);
+    expect(headings[2].parentElement?.querySelector("hr")).toBe(separators[1]);
+
+    // Verify interleaved DOM order inside the grid: each group header immediately precedes its cards
+    const grid = headings[0].parentElement!.parentElement!;
+    const childOrder = Array.from(grid.children).map(
+      (el) => (el as HTMLElement).dataset.cardKey ?? `group:${(el as HTMLElement).dataset.speciesGroup}`
+    );
+    expect(childOrder).toEqual([
+      "group:american robin",
+      "audio-1",
+      "group:blue jay",
+      "audio-2",
+      "video-2",
+      "group:northern cardinal",
+      "video-4",
+      "video-1",
+    ]);
+
+    // Switching back to time order removes the group titles and separators
+    await sortBy(/newest/i);
+    expect(screen.queryAllByRole("heading", { level: 3 })).toHaveLength(0);
+    expect(screen.queryAllByRole("separator")).toHaveLength(0);
+  });
+
+  it("groups items without a known bird species under 'Non-birds & Unidentified' when sorting by species", async () => {
+    renderGrid(fixtures());
+    await includeNonBirds();
+    await sortBy(/species/i);
+
+    const headings = screen.getAllByRole("heading", { level: 3 });
+    expect(headings.map((h) => h.textContent)).toEqual([
+      "American Robin",
+      "Blue Jay",
+      "Northern Cardinal",
+      "Non-birds & Unidentified",
+    ]);
+    expect(screen.getAllByRole("separator")).toHaveLength(3);
+    expect(headings[3].parentElement).toHaveClass("col-span-full");
+  });
 });
 
 describe("ClipGrid video cards", () => {
