@@ -1,0 +1,15 @@
+{
+  "block-env-read": {
+    "PreToolUse": [
+      {
+        "matcher": "read_file|view_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if grep -qE '/(server|client)/\\.env([\"[:space:]]|$)'; then echo '{\"decision\":\"deny\",\"reason\":\"Reading .env files is not allowed; read .env.example instead.\"}'; else echo '{\"decision\":\"allow\"}'; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
