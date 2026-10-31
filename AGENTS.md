@@ -76,10 +76,13 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   └── setup-worktree.sh          # Idempotent local/worktree bootstrap: installs/clones node_modules, runs seed:local-db, links client/public/downloads (optional --link-env, --days <n>)
 ├── test-birds/                    # Committed test media from the real feeder: images/ (bird photos + non*.jpg non-bird photos for seed:local-uploads), audio/ (wav clips)
 ├── .agents/
-│   └── hooks.json                 # Antigravity hooks: SessionStart worktree bootstrap + PreToolUse blocking reads of server/.env and client/.env
+│   ├── hooks.json                 # Antigravity hooks: SessionStart worktree bootstrap + PreToolUse blocking reads of server/.env and client/.env
+│   └── skills/                    # Canonical repo skills (bird-developer end-to-end task → PR workflow, bird-reviewer code review subagent skill)
 ├── .claude/
 │   ├── settings.json              # Shared Claude Code config: SessionStart worktree bootstrap hook + permissions (npm/git/sqlite allowed; .env reads denied)
-│   └── launch.json                # Claude Code preview config: client dev server on :3000
+│   ├── launch.json                # Claude Code preview config: client dev server on :3000
+│   ├── skills/                    # Symlinks to ../../.agents/skills/* so skills work in both Antigravity and Claude Code
+│   └── agents/                    # Claude Code subagent wrappers (bird-developer.md, bird-reviewer.md)
 ├── docker-compose.yml             # Production deploy: server + publish containers, external named volumes, env from server/.env + client/.env
 ├── .nvmrc                         # lts/krypton (Node 24) for local dev; Docker images and CI also use Node 24
 ├── README.md                      # Human-facing setup docs (keep in sync with AGENTS.md files)
@@ -89,7 +92,11 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 
 ## Keeping These Docs Current (required)
 
-Any change that alters what `AGENTS.md`, `server/AGENTS.md`, or `client/AGENTS.md` describes **must update the relevant `AGENTS.md` file(s) in the same change** — don't wait to be asked. That includes: adding/removing/renaming files or routes, new env vars or defaults, schema changes, changes to the processing loop or sync behavior, new commands/scripts, Docker changes, and new conventions. Keep each `AGENTS.md` file under 24 KB (24,000 bytes) so agent rule loaders never truncate them. Also update `README.md` (human setup docs) and the relevant `.env.example` when setup or configuration changes. `CLAUDE.md` only imports the `AGENTS.md` files, so it never needs separate edits. Before finishing a task, re-read the affected sections and confirm they still match the code.
+Any change that alters what `AGENTS.md`, `server/AGENTS.md`, or `client/AGENTS.md` describes **must update the relevant `AGENTS.md` file(s) in the same change** — don't wait to be asked. That includes: adding/removing/renaming files or routes, new env vars or defaults, schema changes, changes to the processing loop or sync behavior, new commands/scripts, Docker changes, and new conventions. Keep each `AGENTS.md` file under 24 KB (24,000 bytes) so agent rule loaders never truncate them. Also update `README.md` (human setup docs) and the relevant `.env.example` when setup or configuration changes. `CLAUDE.md` only imports the `AGENTS.md` files, so it never needs separate edits.
+
+**Keep `.agents/` and `.claude/` in sync (required):** Customizations in this repo support both Antigravity (`.agents/`) and Claude Code (`.claude/`). Canonical skill definitions live in `.agents/skills/<name>/SKILL.md` and must be symlinked into `.claude/skills/<name>`. Whenever you add, rename, or update a skill, subagent, hook, or permission in either `.agents/` or `.claude/`, update the counterpart in the same change (`.agents/skills/*` ↔ `.claude/skills/*` symlinks + `.claude/agents/*.md` wrappers; `.agents/hooks.json` ↔ `.claude/settings.json`) so the two tools never drift out of sync.
+
+Before finishing a task, re-read the affected sections and confirm they still match the code.
 
 There is no root-level `package.json` — `server/`, `client/`, and `client/scripts/scheduled-publish/` each manage their own dependencies.
 

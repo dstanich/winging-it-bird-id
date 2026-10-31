@@ -9,6 +9,9 @@ node_modules/
 # Claude Code personal settings
 .claude/settings.local.json
 
+# Agent task worktrees
+.worktrees/
+
 # IDE
 .vscode/
 .idea/
