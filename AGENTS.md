@@ -74,7 +74,7 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   └── docker.yml                 # PR/push to main touching server/ or client/: builds both Docker images (no push)
 ├── scripts/
 │   └── setup-worktree.sh          # Idempotent local/worktree bootstrap: installs/clones node_modules, runs seed:local-db, links client/public/downloads (optional --link-env, --days <n>)
-├── test-birds/                    # Committed test media from the real feeder: images/ (bird photos + non*.jpg non-bird photos for seed:local-uploads), audio/ (wav clips)
+├── test-birds/                    # Committed test media: images/ (bird photos + non*.jpg non-bird photos), audio/ (wav clips), daily/ (placeholder daily AI images)
 ├── .agents/
 │   ├── hooks.json                 # Antigravity hooks: SessionStart worktree bootstrap + PreToolUse blocking reads of server/.env and client/.env
 │   └── skills/                    # Canonical repo skills (bird-developer end-to-end task → PR workflow, bird-reviewer code review subagent skill)
