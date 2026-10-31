@@ -72,6 +72,7 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 ├── .github/workflows/
 │   ├── ci.yml                     # PR/push to main: server tests, client lint/test/build, publish-script check
 │   └── docker.yml                 # PR/push to main touching server/ or client/: builds both Docker images (no push)
+├── .worktrees/                    # Isolated in-repo git worktrees for agent tasks (.worktrees/<slug>, git-ignored)
 ├── scripts/
 │   └── setup-worktree.sh          # Idempotent local/worktree bootstrap: installs/clones node_modules, runs seed:local-db, links client/public/downloads (optional --link-env, --days <n>)
 ├── test-birds/                    # Committed test media: images/ (bird photos + non*.jpg non-bird photos), audio/ (wav clips), daily/ (placeholder daily AI images)
@@ -126,6 +127,7 @@ npm run dev                # Next.js dev server on http://localhost:3000 (no .en
 npm run build              # Static export build (outputs to client/out/)
 npm run lint               # ESLint (eslint-config-next core-web-vitals + typescript)
 npm test                   # vitest run: the client test suite (npm run test:watch for watch mode)
+npm run screenshot         # node scripts/screenshot.mts: capture UI screenshots with Playwright (desktop/tablet/mobile, offline client/out routing or live dev)
 ```
 
 ### Scheduled publish (`cd client/scripts/scheduled-publish`)
