@@ -100,17 +100,21 @@ describe('seedLocalDb', () => {
   function setupMediaDirs() {
     const imageDir = tempDir();
     const audioDir = tempDir();
+    const dailyImageDir = tempDir();
     for (const name of ['cardinal.jpg', 'bluejay2.jpg', 'goldfinch.jpg', 'nonbird.jpg']) {
       fs.writeFileSync(path.join(imageDir, name), `img:${name}`);
     }
     for (const name of ['bluejay.wav', 'crow.wav', 'goldfinch.wav']) {
       fs.writeFileSync(path.join(audioDir, name), `wav:${name}`);
     }
-    return { imageDir, audioDir };
+    for (const name of ['daily1.jpg', 'daily2.jpg', 'daily3.jpg']) {
+      fs.writeFileSync(path.join(dailyImageDir, name), `daily:${name}`);
+    }
+    return { imageDir, audioDir, dailyImageDir };
   }
 
   it('seeds 15 days by default with 10-30 bird clips (+ 1/3 non-bird) and 10-30 audio detections per day, copying files and leaving the newest day daily image pending', () => {
-    const { imageDir, audioDir } = setupMediaDirs();
+    const { imageDir, audioDir, dailyImageDir } = setupMediaDirs();
     const downloadDir = path.join(tempDir(), 'downloads');
     vi.stubEnv('DATA_DIR', path.join(tempDir(), 'data'));
 
@@ -120,6 +124,7 @@ describe('seedLocalDb', () => {
       const result = seedLocalDb(storage, {
         imageDir,
         audioDir,
+        dailyImageDir,
         downloadDir,
         cameraName: 'Feeder',
         now,
@@ -129,6 +134,7 @@ describe('seedLocalDb', () => {
       expect(result.days).toHaveLength(15);
       expect(result.totalDailyImages).toBe(14);
 
+      const copiedDailyContents: string[] = [];
       for (let i = 0; i < result.days.length; i++) {
         const day = result.days[i];
         expect(day.birdClips).toBe(20);
@@ -138,6 +144,9 @@ describe('seedLocalDb', () => {
         if (i < 14) {
           expect(day.dailyImagePath).not.toBeNull();
           expect(fs.existsSync(day.dailyImagePath!)).toBe(true);
+          const content = fs.readFileSync(day.dailyImagePath!, 'utf8');
+          expect(content).toMatch(/^daily:daily\d+\.jpg$/);
+          copiedDailyContents.push(content);
           expect(storage.getDailyImage(day.date)).toMatchObject({
             date: day.date,
             local_path: day.dailyImagePath,
@@ -147,6 +156,12 @@ describe('seedLocalDb', () => {
           expect(storage.getDailyImage(day.date)).toBeNull();
         }
       }
+      // Every image in dailyImageDir is used once per 3-day round before repeating
+      expect([...copiedDailyContents.slice(0, 3)].sort()).toEqual([
+        'daily:daily1.jpg',
+        'daily:daily2.jpg',
+        'daily:daily3.jpg',
+      ]);
 
       const clipCount = (db.prepare('SELECT COUNT(*) as c FROM clips').get() as { c: number }).c;
       const birdIdCount = (db.prepare('SELECT COUNT(*) as c FROM identifications WHERE is_bird = 1').get() as { c: number }).c;
@@ -174,19 +189,21 @@ describe('seedLocalDb', () => {
   });
 
   it('validates days and count ranges and required media files', () => {
-    const { imageDir, audioDir } = setupMediaDirs();
+    const { imageDir, audioDir, dailyImageDir } = setupMediaDirs();
     const emptyDir = tempDir();
     vi.stubEnv('DATA_DIR', path.join(tempDir(), 'data'));
     const storage = new Storage();
     try {
-      expect(() => seedLocalDb(storage, { imageDir, audioDir, downloadDir: tempDir(), days: 0 }))
+      expect(() => seedLocalDb(storage, { imageDir, audioDir, dailyImageDir, downloadDir: tempDir(), days: 0 }))
         .toThrow(/Invalid days/);
-      expect(() => seedLocalDb(storage, { imageDir, audioDir, downloadDir: tempDir(), minCount: 20, maxCount: 10 }))
+      expect(() => seedLocalDb(storage, { imageDir, audioDir, dailyImageDir, downloadDir: tempDir(), minCount: 20, maxCount: 10 }))
         .toThrow(/Invalid count range/);
-      expect(() => seedLocalDb(storage, { imageDir: emptyDir, audioDir, downloadDir: tempDir() }))
+      expect(() => seedLocalDb(storage, { imageDir: emptyDir, audioDir, dailyImageDir, downloadDir: tempDir() }))
         .toThrow(/No bird images/);
-      expect(() => seedLocalDb(storage, { imageDir, audioDir: emptyDir, downloadDir: tempDir() }))
+      expect(() => seedLocalDb(storage, { imageDir, audioDir: emptyDir, dailyImageDir, downloadDir: tempDir() }))
         .toThrow(/No audio files/);
+      expect(() => seedLocalDb(storage, { imageDir, audioDir, dailyImageDir: emptyDir, downloadDir: tempDir() }))
+        .toThrow(/No daily images/);
     } finally {
       (storage.provider as SQLiteStorage).db.close();
     }

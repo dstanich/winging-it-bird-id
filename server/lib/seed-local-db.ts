@@ -61,6 +61,7 @@ const AUDIO_SPECIES_MAP: Record<string, AudioSpeciesInfo> = {
 export interface SeedLocalDbOptions {
   imageDir: string;
   audioDir: string;
+  dailyImageDir: string;
   downloadDir: string;
   days?: number;
   minCount?: number;
@@ -174,6 +175,7 @@ export function seedLocalDb(
   {
     imageDir,
     audioDir,
+    dailyImageDir,
     downloadDir,
     days = 15,
     minCount = 10,
@@ -197,6 +199,10 @@ export function seedLocalDb(
 
   const audioFiles = listAudio(audioDir);
   if (!audioFiles.length) throw new Error(`No audio files found in ${audioDir}`);
+
+  const dailyImages = listImages(dailyImageDir);
+  if (!dailyImages.length) throw new Error(`No daily images found in ${dailyImageDir}`);
+  const dailyPicks = pickRandom(dailyImages, days - 1, random);
 
   const birdImageByStem = new Map<string, string>();
   for (const img of birdImages) {
@@ -327,7 +333,7 @@ export function seedLocalDb(
     if (!isMostRecentDay) {
       const species = mergeSpecies({ video: dayVideoSpecies, audio: dayAudioSpecies });
       dailyImagePath = path.join(dayDir, `daily-${dateStr}.jpg`);
-      fs.copyFileSync(birdPicks[0].imagePath, dailyImagePath);
+      fs.copyFileSync(dailyPicks[i], dailyImagePath);
       storage.addDailyImage({
         date: dateStr,
         species,

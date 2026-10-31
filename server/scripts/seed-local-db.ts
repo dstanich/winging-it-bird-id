@@ -24,6 +24,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DAYS = 15;
 const IMAGE_DIR = path.resolve(__dirname, '../../test-birds/images');
 const AUDIO_DIR = path.resolve(__dirname, '../../test-birds/audio');
+const DAILY_IMAGE_DIR = path.resolve(__dirname, '../../test-birds/daily');
 
 const args = process.argv.slice(2);
 const force = args.includes('--force');
@@ -55,6 +56,7 @@ try {
   const result = seedLocalDb(storage, {
     imageDir: IMAGE_DIR,
     audioDir: AUDIO_DIR,
+    dailyImageDir: DAILY_IMAGE_DIR,
     downloadDir,
     days,
     cameraName: process.env.CAMERA_NAME || 'Bird',
