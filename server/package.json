@@ -11,6 +11,7 @@
   },
   "scripts": {
     "start": "node index.ts",
+    "seed:db": "node scripts/seed-db.ts",
     "seed:uploads": "node scripts/seed-uploads.ts",
     "typecheck": "tsc",
     "test": "vitest run",

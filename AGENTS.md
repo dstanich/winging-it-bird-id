@@ -24,11 +24,13 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   │   ├── ftp-listener.ts        # FTP server (ftp-srv) the camera pushes clips to
 │   │   ├── ftp-clips.ts           # Scans uploads, parses filenames, extracts thumbnails (ffmpeg)
 │   │   ├── ffmpeg-path.ts         # FFMPEG_PATH: the ffmpeg-static binary path, typed as a string (works around its mismatched types)
+│   │   ├── seed-db.ts             # Local offline testing: seeds SQLite DB + downloads/ from test-birds/ across multiple days
 │   │   ├── seed-uploads.ts        # Local testing: turns test-birds/images photos into Reolink-named videos in UPLOAD_DIR
 │   │   ├── retention.ts           # Prunes clips/identifications/audio identifications/daily images/download dirs older than RETENTION_DAYS
 │   │   ├── storage.ts             # Storage facade, implements StorageProvider
 │   │   ├── sqlite-storage.ts      # SQLite implementation (implements StorageProvider): schema, seeding, migrations, queries
 │   │   └── types.ts               # Shared types: DB row shapes, Clip/DiscoveredClip, BirdIdentification, StorageProvider interface
+│   ├── scripts/seed-db.ts         # CLI for lib/seed-db.ts (npm run seed:db)
 │   ├── scripts/seed-uploads.ts    # CLI for lib/seed-uploads.ts (npm run seed:uploads)
 │   ├── scripts/seed-ci-db.ts      # CI: creates DATA_DIR/bird-data.db with the real schema + fake rows so the client can build
 │   ├── test/                      # Vitest suite: one *.test.ts per lib/ module, plus setup.ts + helpers.ts
@@ -97,6 +99,7 @@ There is no root-level `package.json` — `server/`, `client/`, and `client/scri
 npm start                  # node index.ts: starts the FTP listener, runs an initial check, then loops every CHECK_INTERVAL
 npm test                   # vitest run: the server test suite (npm run test:watch for watch mode)
 npm run typecheck          # tsc: type-check only (no emit); Vitest and Node strip types without checking them
+npm run seed:db            # Seed 15 days of video + audio test data into DATA_DIR + DOWNLOAD_DIR (`-- <days> [--force]`); see server/AGENTS.md
 npm run seed:uploads       # Put 5 bird + 1 non-bird test clips in UPLOAD_DIR (`-- <n>` for n bird clips); see server/AGENTS.md
 ```
 
