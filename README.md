@@ -38,9 +38,10 @@ It's written in TypeScript and needs **Node.js 24 or newer** (`.nvmrc` pins it):
 
 Alternatively, run it with the scheduled publisher via Docker Compose — see [Deploying with Docker](#deploying-with-docker).
 
-#### Test clips without the camera
+#### Test clips & offline database seeding without the camera
 
-`cd server && npm run seed:uploads` (or `npm run seed:uploads -- 12`) creates short videos in `UPLOAD_DIR` from random photos in `test-birds/images/`: the requested number of bird clips (default 5) plus a third as many non-bird clips (at least 1) from photos whose names start with `non`. No photo repeats until every one in its group has been used. They are named like real Reolink uploads with recent timestamps spaced past `VIDEO_COOLDOWN_SECONDS`, so the next processing tick picks them up and sends them to Gemini like real clips.
+- **Seed local uploads (runs through Gemini):** `cd server && npm run seed:local-uploads` (or `npm run seed:local-uploads -- 12`) creates short videos in `UPLOAD_DIR` from random photos in `test-birds/images/`: the requested number of bird clips (default 5) plus a third as many non-bird clips (at least 1) from photos whose names start with `non`. No photo repeats until every one in its group has been used. They are named like real Reolink uploads with recent timestamps spaced past `VIDEO_COOLDOWN_SECONDS`, so the next processing tick picks them up and sends them to Gemini like real clips.
+- **Seed local database (offline, no API calls):** `cd server && npm run seed:local-db` (or `npm run seed:local-db -- 15 --force`) populates `<DATA_DIR>/bird-data.db` (default `./data/bird-data.db`) and copies media into `<DOWNLOAD_DIR>` (default `./downloads`) across 15 recent days by default. Each day gets a randomized 10–30 bird clips (plus 1/3 non-bird clips on top) from `test-birds/images/` and 10–30 audio detections from `test-birds/audio/`, along with species images and daily images for completed days (leaving the most recent day PENDING). Refuses to overwrite an existing database unless `--force` is passed.
 
 #### Tests
 
