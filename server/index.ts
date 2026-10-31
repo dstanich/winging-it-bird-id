@@ -17,6 +17,7 @@ import 'dotenv/config'
 // Configuration
 const CHECK_INTERVAL = parseInt(process.env.CHECK_INTERVAL || '600000'); // 10 minutes default
 const RETENTION_DAYS = parseInt(process.env.RETENTION_DAYS || '60');
+const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || './downloads';
 const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
 const FTP_HOST = process.env.FTP_HOST || '0.0.0.0';
 const FTP_PORT = parseInt(process.env.FTP_PORT || '2121');
@@ -44,10 +45,6 @@ let isProcessing = false;
  * Initialize application
  */
 function initializeApp(): void {
-  const { DOWNLOAD_DIR } = process.env;
-  if (!DOWNLOAD_DIR) {
-    throw new Error('DOWNLOAD_DIR is not set');
-  }
   downloadDir = DOWNLOAD_DIR;
   const dirs = [DOWNLOAD_DIR, UPLOAD_DIR];
   for (const dir of dirs) {

@@ -1,4 +1,12 @@
 {
+  "setup-worktree": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "( [ -x ./scripts/setup-worktree.sh ] && ./scripts/setup-worktree.sh || ../scripts/setup-worktree.sh ) >&2 && echo '{}'"
+      }
+    ]
+  },
   "block-env-read": {
     "PreToolUse": [
       {

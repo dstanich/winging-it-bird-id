@@ -23,6 +23,17 @@ An example of the code running can be found at https://winging-it.org.
 Winging-It is being hosted as a static site on AWS and will be updated as improvements are made to the repo.
 
 ## Running
+
+### Quick Local / Git Worktree Bootstrap
+
+For local development or a fresh `git worktree` (without a camera or API keys), run:
+
+```bash
+./scripts/setup-worktree.sh
+```
+
+This idempotent script installs (or clones from the main worktree) `node_modules` across `server/`, `client/`, and `client/scripts/scheduled-publish/`, seeds 15 days of offline test data into `server/data/bird-data.db` and `server/downloads/`, and creates the `client/public/downloads` symlink. It also runs automatically via `SessionStart` hooks in Antigravity (`.agents/hooks.json`) and Claude Code (`.claude/settings.json`). Pass `--link-env` if you also want to symlink `server/.env` and `client/.env` from your main checkout for live API testing.
+
 ### Server
 
 The server is a Node.js application that runs a local FTP server for the camera to push recorded clips to, extracts thumbnails from those clips, communicates with the AI provider, and stores the results into storage.
