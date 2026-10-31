@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Clip, AudioIdentification } from "@/lib/db";
 import { isKnownSpecies, toTitleCase } from "@/lib/species";
 import { Lightbox, type LightboxImage } from "@/components/lightbox";
@@ -9,11 +9,57 @@ type FeedItem =
   | { type: "video"; timestamp: string; clip: Clip }
   | { type: "audio"; timestamp: string; audio: AudioIdentification };
 
+type MediaFilter = "all" | "video" | "audio";
 type SortOrder = "time" | "species";
+
+/** Normalized lowercase key for a known species. */
+function normalizeSpecies(species: string): string {
+  return species.trim().toLowerCase();
+}
+
+/** All unique known bird species across video clips and audio detections, sorted A–Z with item counts. */
+function collectAvailableSpecies(
+  clips: Clip[],
+  audioIdentifications: AudioIdentification[]
+): { key: string; label: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const clip of clips) {
+    const seenInClip = new Set<string>();
+    for (const ident of clip.identifications) {
+      if (ident.isBird && isKnownSpecies(ident.species)) {
+        seenInClip.add(normalizeSpecies(ident.species));
+      }
+    }
+    for (const key of seenInClip) {
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  for (const audio of audioIdentifications) {
+    if (isKnownSpecies(audio.species)) {
+      const key = normalizeSpecies(audio.species);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  return Array.from(counts.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, count]) => ({ key, label: toTitleCase(key), count }));
+}
 
 /** A clip is worth showing by default only if the AI named at least one bird species. */
 function hasKnownBird(clip: Clip): boolean {
   return clip.identifications.some((ident) => ident.isBird && isKnownSpecies(ident.species));
+}
+
+/** True when the clip has at least one known bird identification matching the selected species set. */
+function clipMatchesSpecies(clip: Clip, selected: Set<string>): boolean {
+  return clip.identifications.some(
+    (ident) => ident.isBird && isKnownSpecies(ident.species) && selected.has(normalizeSpecies(ident.species))
+  );
+}
+
+/** True when the audio detection has a known species matching the selected species set. */
+function audioMatchesSpecies(audio: AudioIdentification, selected: Set<string>): boolean {
+  return isKnownSpecies(audio.species) && selected.has(normalizeSpecies(audio.species));
 }
 
 /** Thumbnail alt text: the first identification's species, title-cased like the rest of the card. */
@@ -55,35 +101,6 @@ function bySpecies(a: FeedItem, b: FeedItem): number {
   return newestFirst(a, b);
 }
 
-function ToggleChip({ label, pressed, onToggle }: { label: string; pressed: boolean; onToggle: () => void }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={pressed}
-      onClick={onToggle}
-      className={`inline-flex items-center gap-1.5 pl-2.5 pr-3 py-1 rounded-full text-sm border transition-colors ${
-        pressed
-          ? "bg-blue-600 border-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:border-blue-500 dark:hover:bg-blue-600"
-          : "bg-transparent border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-500"
-      }`}
-    >
-      <span
-        aria-hidden="true"
-        className={`flex h-4 w-4 items-center justify-center rounded-full border ${
-          pressed ? "border-white bg-white text-blue-600" : "border-zinc-400 dark:border-zinc-500"
-        }`}
-      >
-        {pressed && (
-          <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <path d="M3.5 8.5l3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        )}
-      </span>
-      {label}
-    </button>
-  );
-}
-
 export function ClipGrid({
   clips,
   clipTimes,
@@ -95,19 +112,79 @@ export function ClipGrid({
   audioIdentifications: AudioIdentification[];
   audioTimes: Record<string, string>;
 }) {
-  const [showVideo, setShowVideo] = useState(true);
-  const [showAudio, setShowAudio] = useState(true);
+  const [mediaFilter, setMediaFilter] = useState<MediaFilter>("all");
   const [includeNonBirds, setIncludeNonBirds] = useState(false);
+  const [selectedSpecies, setSelectedSpecies] = useState<string[]>([]);
+  const [speciesMenuOpen, setSpeciesMenuOpen] = useState(false);
   const [sortOrder, setSortOrder] = useState<SortOrder>("time");
   const [selectedImage, setSelectedImage] = useState<LightboxImage | null>(null);
+  const speciesMenuRef = useRef<HTMLDivElement>(null);
 
-  const visibleClips = includeNonBirds ? clips : clips.filter(hasKnownBird);
-  const visibleAudio = includeNonBirds
-    ? audioIdentifications
-    : audioIdentifications.filter((audio) => isKnownSpecies(audio.species));
-  const hiddenCount =
-    (showVideo ? clips.length - visibleClips.length : 0) +
-    (showAudio ? audioIdentifications.length - visibleAudio.length : 0);
+  useEffect(() => {
+    if (!speciesMenuOpen) return;
+    function handleMouseDown(e: MouseEvent) {
+      if (speciesMenuRef.current && !speciesMenuRef.current.contains(e.target as Node)) {
+        setSpeciesMenuOpen(false);
+      }
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setSpeciesMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [speciesMenuOpen]);
+
+  const availableSpecies = collectAvailableSpecies(clips, audioIdentifications);
+  const speciesLabelByKey = new Map(availableSpecies.map((s) => [s.key, s.label]));
+  const selectedSpeciesSet = new Set(selectedSpecies);
+  const hasSpeciesFilter = selectedSpeciesSet.size > 0;
+
+  function toggleSpecies(key: string) {
+    setSelectedSpecies((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  }
+
+  function resetFilters() {
+    setMediaFilter("all");
+    setIncludeNonBirds(false);
+    setSelectedSpecies([]);
+    setSpeciesMenuOpen(false);
+  }
+
+  const showVideo = mediaFilter === "all" || mediaFilter === "video";
+  const showAudio = mediaFilter === "all" || mediaFilter === "audio";
+
+  const nonBirdClipCount = clips.filter((clip) => !hasKnownBird(clip)).length;
+  const nonBirdAudioCount = audioIdentifications.filter((audio) => !isKnownSpecies(audio.species)).length;
+  const totalNonBirdCount = nonBirdClipCount + nonBirdAudioCount;
+
+  const visibleClips = clips.filter((clip) => {
+    const isBirdClip = hasKnownBird(clip);
+    if (!isBirdClip) return includeNonBirds;
+    return hasSpeciesFilter ? clipMatchesSpecies(clip, selectedSpeciesSet) : true;
+  });
+
+  const visibleAudio = audioIdentifications.filter((audio) => {
+    const isBirdAudio = isKnownSpecies(audio.species);
+    if (!isBirdAudio) return includeNonBirds;
+    return hasSpeciesFilter ? audioMatchesSpecies(audio, selectedSpeciesSet) : true;
+  });
+
+  const hiddenCount = includeNonBirds
+    ? 0
+    : (showVideo ? nonBirdClipCount : 0) + (showAudio ? nonBirdAudioCount : 0);
+
+  const speciesButtonLabel =
+    selectedSpecies.length === 0 ? "All species" : `${selectedSpecies.length} selected`;
+
+  const hasActiveFilters = mediaFilter !== "all" || includeNonBirds || hasSpeciesFilter;
 
   const items: FeedItem[] = [
     ...(showVideo
@@ -120,59 +197,236 @@ export function ClipGrid({
 
   return (
     <>
-      <div className="mb-4 space-y-3">
-        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Detection types to show">
-          <span className="text-sm text-zinc-500 dark:text-zinc-400 mr-1">Show:</span>
-          <ToggleChip label="Video" pressed={showVideo} onToggle={() => setShowVideo((v) => !v)} />
-          <ToggleChip label="Audio" pressed={showAudio} onToggle={() => setShowAudio((v) => !v)} />
-        </div>
-        <label className="inline-flex items-center gap-2 cursor-pointer select-none text-sm text-zinc-700 dark:text-zinc-300">
-          <input
-            type="checkbox"
-            checked={includeNonBirds}
-            onChange={(e) => setIncludeNonBirds(e.target.checked)}
-            className="h-4 w-4 rounded border-zinc-300 dark:border-zinc-600 accent-blue-600 dark:accent-blue-500 cursor-pointer"
-          />
-          Include non-birds &amp; unidentified birds
-        </label>
-        <div>
-          <label className="inline-flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-            Sort by:
-            {/* Native select arrows ignore padding (they hug the border), so hide it and draw our own chevron */}
-            <span className="relative inline-flex items-center">
-              <select
-                value={sortOrder}
-                onChange={(e) => setSortOrder(e.target.value as SortOrder)}
-                className="appearance-none rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 py-1 pl-2.5 pr-8 text-sm text-zinc-700 dark:text-zinc-300 cursor-pointer"
-              >
-                <option value="time">Time (newest first)</option>
-                <option value="species">Species (A–Z)</option>
-              </select>
+      {/* Unified Filter & Sort Toolbar */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2 shadow-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Segmented Media Filter */}
+          <div
+            role="group"
+            aria-label="Detection types to show"
+            className="inline-flex rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 p-0.5"
+          >
+            {(
+              [
+                { id: "all", label: "All", count: clips.length + audioIdentifications.length },
+                { id: "video", label: "Video", count: clips.length },
+                { id: "audio", label: "Audio", count: audioIdentifications.length },
+              ] as const
+            ).map((option) => {
+              const active = mediaFilter === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setMediaFilter(option.id)}
+                  className={`inline-flex items-center gap-1 rounded px-2.5 py-1 text-sm font-medium transition-colors cursor-pointer ${
+                    active
+                      ? "bg-blue-600 text-white shadow-xs dark:bg-blue-500"
+                      : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+                  }`}
+                >
+                  <span>{option.label}</span>{" "}
+                  <span
+                    className={`text-xs ${
+                      active ? "text-blue-100" : "text-zinc-400 dark:text-zinc-500"
+                    }`}
+                  >
+                    ({option.count})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Species Multiselect Dropdown */}
+          <div
+            ref={speciesMenuRef}
+            className="relative inline-flex items-center text-sm"
+          >
+            <button
+              type="button"
+              aria-label={`Species: ${speciesButtonLabel}`}
+              aria-expanded={speciesMenuOpen}
+              disabled={availableSpecies.length === 0}
+              onClick={() => setSpeciesMenuOpen((open) => !open)}
+              className={`relative inline-flex items-center gap-1.5 rounded-md border py-1 pl-2.5 pr-7 text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                hasSpeciesFilter
+                  ? "border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/50 dark:text-blue-300"
+                  : "border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:border-zinc-400 dark:hover:border-zinc-600"
+              }`}
+            >
+              <span className="text-zinc-500 dark:text-zinc-400 font-normal">Species:</span>
+              <span>{speciesButtonLabel}</span>
               <svg
                 aria-hidden="true"
                 viewBox="0 0 16 16"
-                className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-zinc-500 dark:text-zinc-400"
+                className="pointer-events-none absolute right-2 h-3.5 w-3.5 text-zinc-500 dark:text-zinc-400"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
               >
                 <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
+            </button>
+            {speciesMenuOpen && (
+              <div
+                role="group"
+                aria-label="Filter by species"
+                className="absolute left-0 top-full z-30 mt-1 min-w-60 max-h-64 overflow-y-auto rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 py-1 shadow-lg"
+              >
+                {availableSpecies.map(({ key, label, count }) => (
+                  <label
+                    key={key}
+                    className="flex items-center justify-between gap-3 px-3 py-1.5 cursor-pointer select-none text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  >
+                    <span className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedSpeciesSet.has(key)}
+                        onChange={() => toggleSpecies(key)}
+                        className="h-4 w-4 rounded border-zinc-300 dark:border-zinc-600 accent-blue-600 dark:accent-blue-500 cursor-pointer"
+                      />
+                      <span>{label}</span>
+                    </span>
+                    <span className="text-xs text-zinc-400 dark:text-zinc-500">{count}</span>
+                  </label>
+                ))}
+                {selectedSpecies.length > 0 && (
+                  <div className="border-t border-zinc-200 dark:border-zinc-800 mt-1 pt-1 px-3 py-1">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSpecies([])}
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                    >
+                      Clear selection
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Non-birds & Unidentified Toggle Button */}
+          <button
+            type="button"
+            aria-pressed={includeNonBirds}
+            onClick={() => setIncludeNonBirds((v) => !v)}
+            className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium transition-colors cursor-pointer ${
+              includeNonBirds
+                ? "border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/50 dark:text-blue-300"
+                : "border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:border-zinc-400 dark:hover:border-zinc-600"
+            }`}
+          >
+            <span aria-hidden="true" className="text-xs">
+              {includeNonBirds ? "✓" : "+"}
             </span>
-          </label>
+            <span>Include non-birds &amp; unidentified</span>{" "}
+            <span
+              className={`text-xs ${
+                includeNonBirds ? "text-blue-600 dark:text-blue-300" : "text-zinc-400 dark:text-zinc-500"
+              }`}
+            >
+              ({totalNonBirdCount})
+            </span>
+          </button>
+        </div>
+
+        {/* Sort Control */}
+        <div className="flex items-center gap-1.5 text-sm text-zinc-500 dark:text-zinc-400">
+          <span>Sort:</span>
+          <div
+            role="group"
+            aria-label="Sort order"
+            className="inline-flex rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 p-0.5"
+          >
+            <button
+              type="button"
+              aria-pressed={sortOrder === "time"}
+              onClick={() => setSortOrder("time")}
+              className={`rounded px-2.5 py-1 text-sm font-medium transition-colors cursor-pointer ${
+                sortOrder === "time"
+                  ? "bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs"
+                  : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+              }`}
+            >
+              Newest
+            </button>
+            <button
+              type="button"
+              aria-pressed={sortOrder === "species"}
+              onClick={() => setSortOrder("species")}
+              className={`rounded px-2.5 py-1 text-sm font-medium transition-colors cursor-pointer ${
+                sortOrder === "species"
+                  ? "bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs"
+                  : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+              }`}
+            >
+              Species A–Z
+            </button>
+          </div>
         </div>
       </div>
-      <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
-        <span>
-          {items.length} {items.length === 1 ? "item" : "items"}
-        </span>
-        {hiddenCount > 0 && (
-          <span>
-            {" "}
-            · {hiddenCount} without an identified bird hidden
+
+      {/* Active Filter Pills */}
+      {(hasSpeciesFilter || includeNonBirds) && (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mr-0.5">
+            Active filters:
           </span>
+          {selectedSpecies.map((key) => {
+            const label = speciesLabelByKey.get(key) ?? toTitleCase(key);
+            return (
+              <button
+                key={key}
+                type="button"
+                aria-label={`Remove ${label} filter`}
+                onClick={() => toggleSpecies(key)}
+                className="inline-flex items-center gap-1 rounded-full bg-blue-600 dark:bg-blue-500 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-blue-700 dark:hover:bg-blue-600 cursor-pointer"
+              >
+                <span>{label}</span>
+                <span aria-hidden="true">&times;</span>
+              </button>
+            );
+          })}
+          {includeNonBirds && (
+            <button
+              type="button"
+              aria-label="Remove non-birds and unidentified filter"
+              onClick={() => setIncludeNonBirds(false)}
+              className="inline-flex items-center gap-1 rounded-full bg-zinc-700 dark:bg-zinc-600 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-zinc-800 dark:hover:bg-zinc-500 cursor-pointer"
+            >
+              <span>Non-birds &amp; unidentified</span>
+              <span aria-hidden="true">&times;</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Result Count & Reset Bar */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+        <p>
+          <span>
+            {items.length} {items.length === 1 ? "item" : "items"}
+          </span>
+          {hiddenCount > 0 && (
+            <span>
+              {" "}
+              · {hiddenCount} without an identified bird hidden
+            </span>
+          )}
+        </p>
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+          >
+            Reset filters
+          </button>
         )}
-      </p>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {items.map((item) =>
           item.type === "video" ? (
