@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Clip, AudioIdentification } from "@/lib/db";
 import { isKnownSpecies, toTitleCase } from "@/lib/species";
 import { Lightbox, type LightboxImage } from "@/components/lightbox";
@@ -657,106 +657,134 @@ export function ClipGrid({
       </div>
 
       <div ref={gridRef} className="relative grid grid-cols-1 md:grid-cols-3 gap-4">
-        {items.map((item) =>
-          item.type === "video" ? (
-            <div
-              key={`video-${item.clip.id}`}
-              data-card-key={`video-${item.clip.id}`}
-              className="relative z-10 rounded-lg overflow-hidden bg-white dark:bg-zinc-900 shadow-sm"
-            >
-              <p className="px-2 pt-2 text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                {clipTimes[item.clip.id]}
-              </p>
-              <img
-                src={`/${item.clip.thumbnailPath}`}
-                alt={clipAlt(item.clip)}
-                className="w-full aspect-video object-cover cursor-pointer"
-                onClick={() =>
-                  setSelectedImage({
-                    src: `/${item.clip.thumbnailPath}`,
-                    alt: clipAlt(item.clip),
-                  })
-                }
-              />
-              <div className="p-2">
-                {item.clip.identifications.length === 0 && (
-                  <p className="text-sm text-zinc-400">No identification</p>
-                )}
-                <div className="space-y-2">
-                  {item.clip.identifications.map((ident, i) =>
-                    ident.isBird ? (
-                      <div key={i} className="text-sm text-zinc-700 dark:text-zinc-300">
-                        <p>
-                          {ident.species && toTitleCase(ident.species)}
-                          {ident.gender && ident.gender !== "unknown" ? ` (${ident.gender})` : ""}
-                          {ident.count != null && ident.count > 1 ? ` ×${ident.count}` : ""}
-                        </p>
-                        {ident.confidence != null && (
-                          <p className="text-xs text-zinc-400">
-                            {Math.round(ident.confidence * 100)}% confidence
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      <div key={i} className="text-sm text-red-500">
-                        <p>{ident.nonBirdSpecies ?? "Not a bird"}</p>
-                        {ident.confidence != null && (
-                          <p className="text-xs text-zinc-400">
-                            {Math.round(ident.confidence * 100)}% confidence
-                          </p>
-                        )}
-                      </div>
-                    )
+        {items.flatMap((item, index) => {
+          const nodes: ReactNode[] = [];
+          if (sortOrder === "species") {
+            const groupKey = sortSpecies(item);
+            const prevGroupKey = index > 0 ? sortSpecies(items[index - 1]) : undefined;
+            if (index === 0 || groupKey !== prevGroupKey) {
+              const groupTitle =
+                groupKey !== null
+                  ? (speciesLabelByKey.get(groupKey) ?? toTitleCase(groupKey))
+                  : "Non-birds & Unidentified";
+              nodes.push(
+                <div
+                  key={`species-group-${groupKey ?? "non-bird"}`}
+                  data-species-group={groupKey ?? "non-bird"}
+                  className={`col-span-full -mb-1 ${index > 0 ? "mt-2" : ""}`}
+                >
+                  {index > 0 && (
+                    <hr className="mb-4 border-zinc-300 dark:border-zinc-800" />
                   )}
+                  <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200">
+                    {groupTitle}
+                  </h3>
                 </div>
-                {item.clip.identifications[0]?.model && (
-                  <p className="mt-2 text-xs text-zinc-400">AI model: {item.clip.identifications[0].model}</p>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div
-              key={`audio-${item.audio.id}`}
-              data-card-key={`audio-${item.audio.id}`}
-              className="relative z-10 rounded-lg overflow-hidden bg-white dark:bg-zinc-900 shadow-sm"
-            >
-              <div className="flex items-center justify-between px-2 pt-2">
-                <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                  {audioTimes[String(item.audio.id)]}
+              );
+            }
+          }
+          nodes.push(
+            item.type === "video" ? (
+              <div
+                key={`video-${item.clip.id}`}
+                data-card-key={`video-${item.clip.id}`}
+                className="relative z-10 rounded-lg overflow-hidden bg-white dark:bg-zinc-900 shadow-sm"
+              >
+                <p className="px-2 pt-2 text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                  {clipTimes[item.clip.id]}
                 </p>
-                <span className="text-xs text-zinc-400" aria-label="Audio detection" title="Audio detection">
-                  🔊
-                </span>
-              </div>
-              {item.audio.speciesImagePath ? (
                 <img
-                  src={`/${item.audio.speciesImagePath}`}
-                  alt={audioSpeciesLabel(item.audio)}
+                  src={`/${item.clip.thumbnailPath}`}
+                  alt={clipAlt(item.clip)}
                   className="w-full aspect-video object-cover cursor-pointer"
                   onClick={() =>
                     setSelectedImage({
-                      src: `/${item.audio.speciesImagePath}`,
-                      alt: audioSpeciesLabel(item.audio),
+                      src: `/${item.clip.thumbnailPath}`,
+                      alt: clipAlt(item.clip),
                     })
                   }
                 />
-              ) : (
-                <div className="w-full aspect-video bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-4xl">
-                  🐦
+                <div className="p-2">
+                  {item.clip.identifications.length === 0 && (
+                    <p className="text-sm text-zinc-400">No identification</p>
+                  )}
+                  <div className="space-y-2">
+                    {item.clip.identifications.map((ident, i) =>
+                      ident.isBird ? (
+                        <div key={i} className="text-sm text-zinc-700 dark:text-zinc-300">
+                          <p>
+                            {ident.species && toTitleCase(ident.species)}
+                            {ident.gender && ident.gender !== "unknown" ? ` (${ident.gender})` : ""}
+                            {ident.count != null && ident.count > 1 ? ` ×${ident.count}` : ""}
+                          </p>
+                          {ident.confidence != null && (
+                            <p className="text-xs text-zinc-400">
+                              {Math.round(ident.confidence * 100)}% confidence
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div key={i} className="text-sm text-red-500">
+                          <p>{ident.nonBirdSpecies ?? "Not a bird"}</p>
+                          {ident.confidence != null && (
+                            <p className="text-xs text-zinc-400">
+                              {Math.round(ident.confidence * 100)}% confidence
+                            </p>
+                          )}
+                        </div>
+                      )
+                    )}
+                  </div>
+                  {item.clip.identifications[0]?.model && (
+                    <p className="mt-2 text-xs text-zinc-400">AI model: {item.clip.identifications[0].model}</p>
+                  )}
                 </div>
-              )}
-              <div className="p-2">
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">{audioSpeciesLabel(item.audio)}</p>
-                {item.audio.confidence != null && (
-                  <p className="text-xs text-zinc-400">{Math.round(item.audio.confidence * 100)}% confidence</p>
-                )}
-                {item.audio.audioPath && (
-                  <audio controls className="w-full mt-2 h-8" src={`/${item.audio.audioPath}`} />
-                )}
               </div>
-            </div>
-          )
-        )}
+            ) : (
+              <div
+                key={`audio-${item.audio.id}`}
+                data-card-key={`audio-${item.audio.id}`}
+                className="relative z-10 rounded-lg overflow-hidden bg-white dark:bg-zinc-900 shadow-sm"
+              >
+                <div className="flex items-center justify-between px-2 pt-2">
+                  <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                    {audioTimes[String(item.audio.id)]}
+                  </p>
+                  <span className="text-xs text-zinc-400" aria-label="Audio detection" title="Audio detection">
+                    🔊
+                  </span>
+                </div>
+                {item.audio.speciesImagePath ? (
+                  <img
+                    src={`/${item.audio.speciesImagePath}`}
+                    alt={audioSpeciesLabel(item.audio)}
+                    className="w-full aspect-video object-cover cursor-pointer"
+                    onClick={() =>
+                      setSelectedImage({
+                        src: `/${item.audio.speciesImagePath}`,
+                        alt: audioSpeciesLabel(item.audio),
+                      })
+                    }
+                  />
+                ) : (
+                  <div className="w-full aspect-video bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-4xl">
+                    🐦
+                  </div>
+                )}
+                <div className="p-2">
+                  <p className="text-sm text-zinc-700 dark:text-zinc-300">{audioSpeciesLabel(item.audio)}</p>
+                  {item.audio.confidence != null && (
+                    <p className="text-xs text-zinc-400">{Math.round(item.audio.confidence * 100)}% confidence</p>
+                  )}
+                  {item.audio.audioPath && (
+                    <audio controls className="w-full mt-2 h-8" src={`/${item.audio.audioPath}`} />
+                  )}
+                </div>
+              </div>
+            )
+          );
+          return nodes;
+        })}
       </div>
       <Lightbox image={selectedImage} onClose={() => setSelectedImage(null)} />
     </>
