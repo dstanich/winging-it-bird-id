@@ -45,6 +45,13 @@ Every `bird-developer` task runs on a branch named `dev/<slug>` inside an isolat
      WORKTREE_DIR="$REPO_ROOT/.worktrees/<slug>"
      ```
 3. **Ensure the Dedicated In-Repo Worktree Exists & Switch to It**:
+   - **Always pull the latest for `main` before creating a worktree**:
+     Before creating any new worktree or branch, always pull the latest changes for `main` from origin so work is based on up-to-date code:
+     ```bash
+     git -C "$REPO_ROOT" checkout main && git -C "$REPO_ROOT" pull origin main
+     ```
+     *(If `$REPO_ROOT` cannot switch branches, update `main` directly via `git -C "$REPO_ROOT" fetch origin main:main`)*.
+   - **Always use `main` as the base** for creating the worktree and `dev/<slug>` branch unless the user requirements explicitly specify a different base branch.
    - **If the current working directory (`pwd -P`) is already `$WORKTREE_DIR`**:
      - Verify it is clean and on branch `dev/<slug>`.
    - **If the current working directory is anywhere else** (e.g. primary checkout, external tool worktree in `~/.gemini/...`, or another worktree):
@@ -199,7 +206,7 @@ Format the Pull Request using this exact structure:
 
   ## Relevant Data & Verification
 
-  - **Model(s) used**: <Agent harness + human-readable model name, e.g., `Antigravity (<Model Name>)` / `Claude Code (<Model Name>)` (`bird-reviewer` inherited same model at `high` effort)>
+  - **Model(s) used**: <Exact model name and version, e.g., `Gemini 3.8 Flash via Antigravity` / `Claude 3.7 Sonnet via Claude Code` (`bird-reviewer` inherited same model at `high` effort)>
   - **Branch**: `dev/<slug>`
   - **Checks run**: <e.g., `server: typecheck + vitest`, `client: eslint + vitest + next build`>
   - **`bird-reviewer` summary**: <Number of review rounds run, issues fixed, and any skipped/remaining items>
@@ -217,23 +224,56 @@ Format the Pull Request using this exact structure:
   *(Include when UI changes were made; provide all three screen sizes: desktop, tablet, and mobile)*
   ```
 
-3. **Publish or Draft the PR (Branching on `--create-pr`)**:
+> [!IMPORTANT]
+> **Model Identification in PRs**:
+> Always include the clear, precise model name and exact version in the PR (e.g., `Gemini 3.8 Flash`, `Claude 3.7 Sonnet`, `Claude 3.5 Sonnet`, `GPT-4o`). Never use the harness name only (e.g. `Antigravity`, `Claude Code`) or company name only (e.g. `Google`, `Anthropic`). Be clear, precise, and consistent with the names (e.g., `Gemini 3.8 Flash via Antigravity` or `Claude 3.7 Sonnet via Claude Code`).
+> - In **Antigravity**: Determine the model and version from session settings or metadata (e.g. `Gemini 3.8 Flash`, `Gemini 3.8 Pro`, `Claude 3.7 Sonnet`).
+> - In **Claude Code**: Determine the model and version from session configuration (e.g. `Claude 3.7 Sonnet`, `Claude 3.5 Sonnet`).
+
+3. **Manage GitHub Model Label**:
+
+When creating the PR, attach a GitHub label named after the model used:
+- **Model Label Name**: Use the model name and version (e.g. `Gemini 3.8 Flash`, `Claude 3.7 Sonnet`).
+- **Search Existing Labels**:
+  Check repository labels before creating a new one:
+  ```bash
+  gh label list --json name,color
+  ```
+  Search (case-insensitively) for an existing label matching the model name and version. If a match exists, reuse its exact casing and name.
+- **Create Label if None Exists**:
+  If no matching label exists, find a distinct hex color that is **not currently in use** by any existing label on the repository.
+  1. Inspect the existing colors:
+     ```bash
+     gh label list --json color --jq '.[].color'
+     ```
+  2. Pick a distinct 6-character hex color that is not already in use (e.g., selecting from vibrant, distinctive hex colors such as `4285F4`, `EA4335`, `FBBC04`, `34A853`, `8E24AA`, `00ACC1`, `3949AB`, `D81B60`, `00897B`, `F4511E`, `6D4C41`, `546E7A` that does not appear in the repository's existing label colors).
+  3. Create the label:
+     ```bash
+     gh label create "<Model Name and Version>" --color "<unused-hex>" --description "Pull requests created with <Model Name and Version>"
+     ```
+
+4. **Publish or Draft the PR (Branching on `--create-pr`)**:
 
 - **Default (`--create-pr` NOT specified)**:
   - **Do NOT push the branch or create the GitHub PR.**
   - If screenshots were captured in `.screenshots/`, render them directly in the chat session or artifact so the user can visually review all screen sizes (desktop, tablet, mobile).
-  - Present the proposed **PR Title**, the rendered **PR Body** (in a markdown block so it is easy to copy or inspect), the worktree/branch location (`$WORKTREE_DIR` / `.worktrees/<slug>` on branch `dev/<slug>`), and the exact commands to publish it when ready (including `--attach` flags for all captured screenshots):
+  - Present the proposed **PR Title**, the rendered **PR Body** (in a markdown block so it is easy to copy or inspect), the worktree/branch location (`$WORKTREE_DIR` / `.worktrees/<slug>` on branch `dev/<slug>`), and the exact commands to publish it when ready (including creating the model label if needed, applying `--label`, and `--attach` flags for all captured screenshots):
     ```bash
+    # 1. Ensure model label exists (create if not already present with an unused color)
+    gh label create "<Model Name and Version>" --color "<unused-hex>" --description "Pull requests created with <Model Name and Version>" 2>/dev/null || true
+
+    # 2. Push and create PR
     git push -u origin dev/<slug>
-    gh pr create --base main --head dev/<slug> --title "<PR Title>" --body "<PR Body>" --attach '.screenshots/<file>-desktop.png#Desktop' --attach '.screenshots/<file>-tablet.png#Tablet' --attach '.screenshots/<file>-mobile.png#Mobile'
+    gh pr create --base main --head dev/<slug> --title "<PR Title>" --body "<PR Body>" --label "<Model Name and Version>" --attach '.screenshots/<file>-desktop.png#Desktop' --attach '.screenshots/<file>-tablet.png#Tablet' --attach '.screenshots/<file>-mobile.png#Mobile'
     ```
 - **When `--create-pr` IS specified**:
+  - Ensure the model label exists in GitHub (search existing labels with `gh label list --json name,color`; if absent, create it in a color not currently in use).
   - Push the branch to `origin`:
     ```bash
     git push -u origin dev/<slug>
     ```
-  - Create the PR on GitHub via `gh pr create`, appending `--attach '.screenshots/<file>.png#<Caption>'` for each captured screenshot across desktop, tablet, and mobile (GitHub CLI uploads each file and rewrites matching `./.screenshots/<file>.png` body references to the uploaded GitHub asset URLs):
+  - Create the PR on GitHub via `gh pr create` with `--label "<model-label>"`, appending `--attach '.screenshots/<file>.png#<Caption>'` for each captured screenshot across desktop, tablet, and mobile (GitHub CLI uploads each file and rewrites matching `./.screenshots/<file>.png` body references to the uploaded GitHub asset URLs):
     ```bash
-    gh pr create --base main --head dev/<slug> --title "<PR Title>" --body-file <temp-body-file> --attach '.screenshots/<file>-desktop.png#Desktop' --attach '.screenshots/<file>-tablet.png#Tablet' --attach '.screenshots/<file>-mobile.png#Mobile'
+    gh pr create --base main --head dev/<slug> --title "<PR Title>" --body-file <temp-body-file> --label "<model-label>" --attach '.screenshots/<file>-desktop.png#Desktop' --attach '.screenshots/<file>-tablet.png#Tablet' --attach '.screenshots/<file>-mobile.png#Mobile'
     ```
   - Report the created PR URL and a brief summary back to the user.

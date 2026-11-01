@@ -40,7 +40,7 @@ Return your review report in the exact format below so `bird-developer` can dete
 ```markdown
 # Bird Reviewer Report (Round <N>)
 
-**Model**: `<Human-readable model name (inherited from bird-developer), effort: high>`
+**Model**: `<Exact model name and version (inherited from bird-developer), e.g., Gemini 3.8 Flash, effort: high>`
 **Verdict**: `<PASS (0 fix recommendations) | ACTION REQUIRED (X fix recommendations)>`
 
 ## Findings
