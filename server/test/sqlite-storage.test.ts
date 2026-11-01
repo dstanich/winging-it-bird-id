@@ -3,7 +3,7 @@ import * as path from 'path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SQLiteStorage } from '../lib/sqlite-storage.ts';
-import { DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_PROMPT, DEFAULT_MODEL, DEFAULT_PROMPT } from '../lib/ai-provider.ts';
+import { DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_PROMPT, DEFAULT_MODEL, DEFAULT_PROMPT, PREVIOUS_DEFAULT_PROMPTS } from '../lib/ai-provider.ts';
 import { useTempDirs } from './helpers.ts';
 import type { BirdIdentification } from '../lib/types.ts';
 
@@ -91,6 +91,51 @@ describe('SQLiteStorage', () => {
       openStorage();
       expect(storage.getSettings('ai_model')).toHaveLength(1);
       expect(storage.getSetting('ai_model')).toBeNull();
+    });
+  });
+
+  describe('default prompt upgrade', () => {
+    const [oldDefault] = PREVIOUS_DEFAULT_PROMPTS;
+
+    /** Reopens the DB after making `value` the only active ai_prompt (inserted as a new row). */
+    const reopenWithActivePrompt = (value: string) => {
+      openStorage();
+      storage.db.prepare("UPDATE settings SET is_active = 0 WHERE name = 'ai_prompt'").run();
+      const { lastInsertRowid } = storage.setSetting('ai_prompt', value, 1);
+      storage.db.close();
+      openStorage();
+      return Number(lastInsertRowid);
+    };
+
+    it('replaces an active previous default with the current DEFAULT_PROMPT as a new versioned row', () => {
+      const oldId = reopenWithActivePrompt(oldDefault);
+
+      expect(storage.getSetting('ai_prompt')).toBe(DEFAULT_PROMPT);
+      const rows = storage.getSettings('ai_prompt');
+      expect(rows.find(r => r.id === oldId)).toMatchObject({ value: oldDefault, is_active: 0 });
+      expect(rows.filter(r => r.is_active === 1)).toHaveLength(1);
+    });
+
+    it('only upgrades once', () => {
+      reopenWithActivePrompt(oldDefault);
+      const count = storage.getSettings('ai_prompt').length;
+      storage.db.close();
+      openStorage();
+      expect(storage.getSettings('ai_prompt')).toHaveLength(count);
+    });
+
+    it('leaves a customized active prompt alone', () => {
+      reopenWithActivePrompt('my custom prompt');
+      expect(storage.getSetting('ai_prompt')).toBe('my custom prompt');
+    });
+
+    it('does not reactivate anything when no prompt is active', () => {
+      openStorage();
+      storage.db.prepare("UPDATE settings SET value = ?, is_active = 0 WHERE name = 'ai_prompt'").run(oldDefault);
+      storage.db.close();
+      openStorage();
+      expect(storage.getSetting('ai_prompt')).toBeNull();
+      expect(storage.getSettings('ai_prompt')).toHaveLength(1);
     });
   });
 

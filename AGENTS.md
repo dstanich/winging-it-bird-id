@@ -17,7 +17,7 @@ Hobby project that runs a local FTP server for a Reolink camera (pointed at a bi
 │   ├── AGENTS.md                  # Server architecture, tests, env vars, and conventions
 │   ├── index.ts                   # Main entry point: starts FTP listener + periodic processing loop
 │   ├── lib/
-│   │   ├── ai-provider.ts         # Gemini AI integration (identification + image generation); exports DEFAULT_PROMPT / DEFAULT_MODEL / DEFAULT_IMAGE_PROMPT / DEFAULT_IMAGE_MODEL
+│   │   ├── ai-provider.ts         # Gemini AI integration (schema-enforced JSON identification + image generation); exports DEFAULT_PROMPT / PREVIOUS_DEFAULT_PROMPTS / DEFAULT_MODEL / DEFAULT_IMAGE_PROMPT / DEFAULT_IMAGE_MODEL / IDENTIFICATION_RESPONSE_SCHEMA / normalizeIdentification
 │   │   ├── birdnet-provider.ts    # BirdNET-Go audio detection sync (optional, independent of clips)
 │   │   ├── clip-processing.ts     # applyCooldown() filter + processClips() AI pass, used by the main loop
 │   │   ├── daily-image.ts         # generateDailyImages(): per-day AI species illustration once a day is complete
@@ -149,7 +149,7 @@ The server and client each have a Vitest suite (`server/test/`, `client/test/`);
 
 **clips** — `id` (PK, Unix seconds of recording time), `created_at`, `updated_at`, `device_name`, `network_name` (`'Reolink FTP'`), `type` (`'recording'`), `source` (`'ftp'`), `thumbnail`, `media` (original filename), `time_zone`, `local_thumbnail_path`. Index on `created_at`.
 
-**identifications** — `id` (autoincrement PK), `clip_id` (FK → clips), `is_bird`, `species` (lowercase common name), `gender`, `count`, `confidence`, `non_bird_species`, `ai_model_id` (FK → settings), `ai_prompt_id` (FK → settings). Index on `species`.
+**identifications** — `id` (autoincrement PK), `clip_id` (FK → clips), `is_bird` (true only when a bird species was named), `species` (lowercase common name), `gender`, `count`, `confidence`, `non_bird_species`, `ai_model_id` (FK → settings), `ai_prompt_id` (FK → settings). Index on `species`.
 
 **audio_identifications** — `id` (autoincrement PK), `birdnet_detection_id` (unique, BirdNET-Go's own detection ID — dedupe/sync cursor key), `species`, `scientific_name`, `species_code`, `confidence`, `verified`, `source`, `detected_at`, `begin_time`, `end_time`, `local_audio_path`, `species_image_id` (FK → species_images), `created_at`. Indexes on `scientific_name`, `detected_at`. Not linked to `clips`.
 
@@ -157,7 +157,7 @@ The server and client each have a Vitest suite (`server/test/`, `client/test/`);
 
 **daily_images** — `id` (autoincrement PK), `date` (unique, local `YYYY-MM-DD`), `species` (JSON array of the title-cased species drawn), `local_path` (NULL for a completed day with no known birds), `ai_model_id` (FK → settings), `ai_prompt_id` (FK → settings), `created_at`. One row per completed day; its presence means the day is done.
 
-**settings** — `id` (autoincrement PK), `name`, `value`, `is_active` (boolean). Index on `name`. Used for `ai_model`, `ai_prompt`, `ai_image_model`, and `ai_image_prompt` (each seeded on first run if no row with that name exists). Settings are versioned: identifications reference the exact row used, so to change the model/prompt insert a new row and flip `is_active` rather than editing an existing row's `value`.
+**settings** — `id` (autoincrement PK), `name`, `value`, `is_active` (boolean). Index on `name`. Used for `ai_model`, `ai_prompt`, `ai_image_model`, and `ai_image_prompt` (each seeded on first run if no row with that name exists; an active `ai_prompt` still equal to a previous default is upgraded to the current `DEFAULT_PROMPT` as a new row on startup). Settings are versioned: identifications reference the exact row used, so to change the model/prompt insert a new row and flip `is_active` rather than editing an existing row's `value`.
 
 Schema changes go in `SQLiteStorage._createSchema()` (`server/lib/sqlite-storage.ts`) and the row types in `server/lib/types.ts`; existing databases need an explicit migration (see `_migrateIdentifications()` for the pattern), since `CREATE TABLE IF NOT EXISTS` won't add columns. Update the client's row interfaces in `client/lib/db.ts`, `client/test/helpers.ts`, and `server/scripts/seed-ci-db.ts` to match.
 

@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
-import { DEFAULT_PROMPT, DEFAULT_MODEL, DEFAULT_IMAGE_PROMPT, DEFAULT_IMAGE_MODEL } from './ai-provider.ts';
+import { DEFAULT_PROMPT, DEFAULT_MODEL, DEFAULT_IMAGE_PROMPT, DEFAULT_IMAGE_MODEL, PREVIOUS_DEFAULT_PROMPTS } from './ai-provider.ts';
 import type {
     AudioIdentificationInput,
     BirdSpecies,
@@ -112,6 +112,7 @@ export class SQLiteStorage implements StorageProvider {
         `);
 
         this._seedDefaultSettings();
+        this._migrateDefaultPrompt();
         this._migrateIdentifications();
     }
 
@@ -200,6 +201,21 @@ export class SQLiteStorage implements StorageProvider {
                 insert.run(name, value);
             }
         }
+    }
+
+    /**
+     * Upgrades an untouched default prompt: if the active ai_prompt is still a previous
+     * DEFAULT_PROMPT, inserts the current DEFAULT_PROMPT as a new active row and deactivates
+     * the old one (settings are versioned, so the old row stays for existing identifications).
+     * Customized prompts are left alone.
+     */
+    _migrateDefaultPrompt(): void {
+        const active = this.db.prepare("SELECT id, value FROM settings WHERE name = 'ai_prompt' AND is_active = 1").all() as SettingWithId[];
+        if (active.length !== 1 || !PREVIOUS_DEFAULT_PROMPTS.includes(active[0].value)) return;
+        this.db.transaction(() => {
+            this.db.prepare('UPDATE settings SET is_active = 0 WHERE id = ?').run(active[0].id);
+            this.db.prepare("INSERT INTO settings (name, value, is_active) VALUES ('ai_prompt', ?, 1)").run(DEFAULT_PROMPT);
+        })();
     }
 
     getSetting(name: string): string | null {
