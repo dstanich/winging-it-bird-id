@@ -107,20 +107,7 @@ Every `bird-developer` task runs on a branch named `dev/<slug>` inside an isolat
      ```bash
      node --check client/scripts/scheduled-publish/index.js
      ```
-4. **Capture UI Screenshots (for User-Facing UI Changes Across All Screen Sizes)**:
-   - When changes affect client UI (pages, components, responsive layout, styling):
-     - After `npm run build` succeeds, capture screenshots across **all standard screen sizes** (**desktop**, **tablet**, and **mobile**) to verify responsive layouts and provide complete visual documentation:
-       ```bash
-       cd client && npm run screenshot -- /path/to/route --all-sizes
-       ```
-       (Running `npm run screenshot -- --all-sizes` with no route arguments automatically captures `/` and the most recent date page across all three device sizes).
-     - Individual viewports can also be targeted if needed:
-       - **Desktop** (`1280x800`): `npm run screenshot -- /path/to/route --desktop`
-       - **Tablet** (`768x1024`): `npm run screenshot -- /path/to/route --tablet`
-       - **Mobile** (`375x667`): `npm run screenshot -- /path/to/route --mobile`
-       - Add `--full-page` to capture the entire scrollable height when reviewing long feeds.
-     - Images are saved into `<repo-root>/.screenshots/` (e.g. `<slug>-desktop.png`, `<slug>-tablet.png`, `<slug>-mobile.png`), which is git-ignored to prevent bloating repository history.
-5. **Commit with Agent as Author**:
+4. **Commit with Agent as Author**:
    - Organize work into logical commits using Conventional Commits with a scope (`feat(server): ...`, `fix(client): ...`, `docs: ...`, `chore: ...`). Multiple commits are fine when they aid clarity, but do not go overboard (typically 1–3 commits for a task).
    - The commit must come from the active coding agent (author) instead of the user; the user will then review the PR and merge it as themselves so it will ultimately be authored by both:
      - In **Antigravity**:
@@ -167,7 +154,28 @@ After initial implementation, tests, docs, and commits are complete, run the `bi
 
 ---
 
-### Step 5: Prepare or Publish the Pull Request
+### Step 5: Capture UI Screenshots & Prepare or Publish the Pull Request
+
+> [!IMPORTANT]
+> Do NOT capture screenshots during Step 3 or during the `bird-reviewer` validation loop in Step 4. Screenshots must only be taken after all `bird-reviewer` review cycles are complete, just prior to opening the PR or summarizing the PR in the session.
+
+1. **Capture UI Screenshots (for User-Facing UI Changes Across All Screen Sizes)**:
+   - When changes affect client UI (pages, components, responsive layout, styling):
+     - After all `bird-reviewer` review cycles and any follow-up fix commits are finished, capture screenshots just prior to creating the PR or summarizing the PR in the session.
+     - Ensure the client build is current (`cd client && npm run build`), then capture screenshots across **all standard screen sizes** (**desktop**, **tablet**, and **mobile**) to verify responsive layouts and provide complete visual documentation:
+       ```bash
+       cd client && npm run screenshot -- /path/to/route --all-sizes
+       ```
+       (Running `npm run screenshot -- --all-sizes` with no route arguments automatically captures `/` and the most recent date page across all three device sizes).
+     - Individual viewports can also be targeted if needed:
+       - **Desktop** (`1280x800`): `npm run screenshot -- /path/to/route --desktop`
+       - **Tablet** (`768x1024`): `npm run screenshot -- /path/to/route --tablet`
+       - **Mobile** (`375x667`): `npm run screenshot -- /path/to/route --mobile`
+       - Add `--full-page` to capture the entire scrollable height when reviewing long feeds.
+     - Images are saved into `<repo-root>/.screenshots/` (e.g. `<slug>-desktop.png`, `<slug>-tablet.png`, `<slug>-mobile.png`), which is git-ignored to prevent bloating repository history.
+   - If no user-facing UI changes were made (e.g. backend-only, documentation, developer skills, or CI changes), skip screenshot capture.
+
+2. **Format the Pull Request**:
 
 Format the Pull Request using this exact structure:
 
@@ -207,7 +215,7 @@ Format the Pull Request using this exact structure:
   *(Include when UI changes were made; provide all three screen sizes: desktop, tablet, and mobile)*
   ```
 
-#### Branching on `--create-pr`:
+3. **Publish or Draft the PR (Branching on `--create-pr`)**:
 
 - **Default (`--create-pr` NOT specified)**:
   - **Do NOT push the branch or create the GitHub PR.**
