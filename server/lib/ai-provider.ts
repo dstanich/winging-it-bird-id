@@ -39,7 +39,7 @@ export const IDENTIFICATION_RESPONSE_SCHEMA = {
             species: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Common name of the bird species; null when is_bird is false.' },
             gender: { type: 'string', enum: ['male', 'female', 'unknown'] },
             count: { type: 'integer', minimum: 0, description: 'Number of birds of this species in the image.' },
-            confidence: { type: 'number', minimum: 0, maximum: 1 },
+            confidence: { type: 'number', minimum: 0, maximum: 1, description: 'Confidence score as a decimal between 0.0 and 1.0.' },
             non_bird_species: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Most prominent non-bird animal or object when is_bird is false; otherwise null.' },
         },
         required: ['is_bird', 'species', 'gender', 'count', 'confidence', 'non_bird_species'],
