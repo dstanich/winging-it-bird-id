@@ -15,7 +15,9 @@ const { generateContent, GoogleGenAI } = vi.hoisted(() => {
 
 vi.mock('@google/genai', () => ({ GoogleGenAI }));
 
-const { AIProvider, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_PROMPT, DEFAULT_MODEL, DEFAULT_PROMPT } = await import('../lib/ai-provider.ts');
+const {
+  AIProvider, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_PROMPT, DEFAULT_MODEL, DEFAULT_PROMPT, IDENTIFICATION_RESPONSE_SCHEMA, normalizeIdentification,
+} = await import('../lib/ai-provider.ts');
 
 const makeTempDir = useTempDirs();
 
@@ -43,7 +45,7 @@ describe('AIProvider', () => {
     expect(GoogleGenAI).toHaveBeenCalledExactlyOnceWith({ apiKey: 'test-key' });
   });
 
-  it('sends the base64 thumbnail and the active prompt to the active model', async () => {
+  it('sends the base64 thumbnail and the active prompt to the active model, requesting schema-enforced JSON', async () => {
     const storage = fakeStorage({
       ai_prompt: { id: 11, value: 'custom prompt' },
       ai_model: { id: 22, value: 'gemini-custom' },
@@ -63,6 +65,7 @@ describe('AIProvider', () => {
           { text: 'custom prompt' },
         ],
       }],
+      config: { responseMimeType: 'application/json', responseJsonSchema: IDENTIFICATION_RESPONSE_SCHEMA },
     });
   });
 
@@ -74,7 +77,7 @@ describe('AIProvider', () => {
     const [{ model, contents }] = generateContent.mock.calls[0];
     expect(model).toBe(DEFAULT_MODEL);
     expect(contents[0].parts[1].text).toBe(DEFAULT_PROMPT);
-    expect(result).toEqual([{ is_bird: false, ai_model_id: null, ai_prompt_id: null }]);
+    expect(result).toEqual([{ is_bird: false, species: null, non_bird_species: null, ai_model_id: null, ai_prompt_id: null }]);
   });
 
   it('tags every result in an array response with the settings ids used', async () => {
@@ -92,12 +95,12 @@ describe('AIProvider', () => {
     const result = await new AIProvider(storage).identifyBird(clip, thumbnailPath);
 
     expect(result).toEqual([
-      { is_bird: true, species: 'house finch', gender: 'male', count: 2, confidence: 0.9, ai_model_id: 22, ai_prompt_id: 11 },
-      { is_bird: true, species: 'house sparrow', gender: 'female', count: 1, confidence: 0.7, ai_model_id: 22, ai_prompt_id: 11 },
+      { is_bird: true, species: 'house finch', gender: 'male', count: 2, confidence: 0.9, non_bird_species: null, ai_model_id: 22, ai_prompt_id: 11 },
+      { is_bird: true, species: 'house sparrow', gender: 'female', count: 1, confidence: 0.7, non_bird_species: null, ai_model_id: 22, ai_prompt_id: 11 },
     ]);
   });
 
-  it('returns a single tagged object when the model returns a bare object', async () => {
+  it('wraps a bare object response in an array', async () => {
     const storage = fakeStorage({
       ai_prompt: { id: 11, value: 'p' },
       ai_model: { id: 22, value: 'm' },
@@ -106,7 +109,33 @@ describe('AIProvider', () => {
 
     const result = await new AIProvider(storage).identifyBird(clip, thumbnailPath);
 
-    expect(result).toEqual({ is_bird: false, non_bird_species: 'squirrel', confidence: 0.8, ai_model_id: 22, ai_prompt_id: 11 });
+    expect(result).toEqual([{ is_bird: false, species: null, non_bird_species: 'squirrel', confidence: 0.8, ai_model_id: 22, ai_prompt_id: 11 }]);
+  });
+
+  it('marks a squirrel-only clip as a non-bird even when the model flags is_bird', async () => {
+    generateContent.mockResolvedValue({
+      text: JSON.stringify([{ is_bird: true, species: null, gender: 'unknown', count: 1, confidence: 0.8, non_bird_species: 'squirrel' }]),
+    });
+
+    const [result] = await new AIProvider(fakeStorage()).identifyBird(clip, thumbnailPath);
+
+    expect(result).toMatchObject({ is_bird: false, species: null, non_bird_species: 'squirrel' });
+  });
+
+  it('keeps bird rows and non-bird rows separate when a clip has both', async () => {
+    generateContent.mockResolvedValue({
+      text: JSON.stringify([
+        { is_bird: true, species: 'Blue Jay', gender: 'unknown', count: 1, confidence: 0.9, non_bird_species: null },
+        { is_bird: false, species: null, gender: 'unknown', count: 1, confidence: 0.7, non_bird_species: 'squirrel' },
+      ]),
+    });
+
+    const result = await new AIProvider(fakeStorage()).identifyBird(clip, thumbnailPath);
+
+    expect(result.map(r => [r.is_bird, r.species, r.non_bird_species])).toEqual([
+      [true, 'blue jay', null],
+      [false, null, 'squirrel'],
+    ]);
   });
 
   it('throws and logs when the response is not valid JSON', async () => {
@@ -128,6 +157,51 @@ describe('AIProvider', () => {
     await expect(new AIProvider(fakeStorage()).identifyBird(clip, path.join(makeTempDir(), 'missing.jpg')))
       .rejects.toThrow(/ENOENT/);
     expect(generateContent).not.toHaveBeenCalled();
+  });
+});
+
+describe('IDENTIFICATION_RESPONSE_SCHEMA', () => {
+  it('requires every field the identifications table stores', () => {
+    expect(IDENTIFICATION_RESPONSE_SCHEMA.type).toBe('array');
+    expect([...IDENTIFICATION_RESPONSE_SCHEMA.items.required].sort()).toEqual(
+      ['confidence', 'count', 'gender', 'is_bird', 'non_bird_species', 'species'],
+    );
+  });
+});
+
+describe('DEFAULT_PROMPT', () => {
+  it('no longer asks for output formatting that the response schema enforces', () => {
+    expect(DEFAULT_PROMPT).not.toMatch(/JSON|codeblock|code block|format/i);
+  });
+});
+
+describe('normalizeIdentification', () => {
+  it('keeps a named bird species as a bird, trimmed and lowercased', () => {
+    expect(normalizeIdentification({ is_bird: true, species: '  Northern Cardinal ', non_bird_species: null }))
+      .toEqual({ is_bird: true, species: 'northern cardinal', non_bird_species: null });
+  });
+
+  it.each([
+    ['null species', { is_bird: true, species: null, non_bird_species: 'squirrel' }],
+    ['blank species', { is_bird: true, species: '   ', non_bird_species: 'squirrel' }],
+    ['missing species', { is_bird: true, non_bird_species: 'squirrel' }],
+  ])('turns an is_bird result with %s into a non-bird', (_label, raw) => {
+    expect(normalizeIdentification(raw)).toEqual({ is_bird: false, species: null, non_bird_species: 'squirrel' });
+  });
+
+  it('moves a species named on a non-bird result into non_bird_species', () => {
+    expect(normalizeIdentification({ is_bird: false, species: 'Squirrel', non_bird_species: null }))
+      .toEqual({ is_bird: false, species: null, non_bird_species: 'squirrel' });
+  });
+
+  it('keeps an existing non_bird_species over a stray species on a non-bird result', () => {
+    expect(normalizeIdentification({ is_bird: false, species: 'squirrel', non_bird_species: 'raccoon' }))
+      .toEqual({ is_bird: false, species: null, non_bird_species: 'raccoon' });
+  });
+
+  it('blanks an empty non_bird_species to null and preserves other fields', () => {
+    expect(normalizeIdentification({ is_bird: true, species: 'blue jay', gender: 'male', count: 2, confidence: 0.9, non_bird_species: '' }))
+      .toEqual({ is_bird: true, species: 'blue jay', gender: 'male', count: 2, confidence: 0.9, non_bird_species: null });
   });
 });
 

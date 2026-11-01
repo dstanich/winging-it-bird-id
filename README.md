@@ -10,7 +10,7 @@ This repo is a mix of developer written and AI agent written code as a hobby pro
 
 ## Overview
 
-Node.js application that runs a local FTP server for a camera to push recorded clips to on motion, extracts a thumbnail from each clip via ffmpeg, then identifies what bird(s) are in it using Google Gemini.
+Node.js application that runs a local FTP server for a camera to push recorded clips to on motion, extracts a thumbnail from each clip via ffmpeg, then identifies what bird(s) are in it using Google Gemini. Gemini is called with a JSON response schema (structured output), so results are always parseable JSON; a clip is only marked as a bird when at least one bird species is named (e.g. a squirrel-only clip is a non-bird).
 
 Once a day is complete (7 AM local time the following day), the server also asks Gemini for a cartoon-style "species of the day" illustration of every known bird species seen on video or heard by BirdNET-Go that day. The date page shows it next to the summary, or a PENDING placeholder until it exists. `DAILY_IMAGE_LOOKBACK_DAYS` (default 7) caps how many past days are considered, and the image model/prompt are stored as `ai_image_model`/`ai_image_prompt` settings rows (default model `gemini-3.1-flash-lite-image`).
 
