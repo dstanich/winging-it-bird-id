@@ -5,7 +5,84 @@
 
 import * as fs from 'fs';
 import type { AIProvider } from './ai-provider.ts';
-import type { Clip } from './types.ts';
+import type { BirdIdentification, Clip } from './types.ts';
+
+const HUMAN_OBJECT_PATTERN = new RegExp(
+  '\\b(' +
+    [
+      'humans?',
+      'persons?',
+      'people',
+      'adults?',
+      'child',
+      'children',
+      'kids?',
+      'bab(?:y|ies)',
+      'infants?',
+      'toddlers?',
+      'teens?',
+      'teenagers?',
+      'man',
+      'men',
+      'woman',
+      'women',
+      'boys?',
+      'girls?',
+      'guys?',
+      'pedestrians?',
+      'hands?',
+      'fists?',
+      'knuckles?',
+      'fingers?',
+      'thumbs?',
+      'fingertips?',
+      'fingernails?',
+      'arms?',
+      'forearms?',
+      'wrists?',
+      'elbows?',
+      'shoulders?',
+      'faces?',
+      'torsos?',
+      'legs?',
+      'foot',
+      'feet',
+      'ankles?',
+    ].join('|') +
+    ')\\b',
+  'i',
+);
+
+function isHumanLabel(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return HUMAN_OBJECT_PATTERN.test(value.replaceAll('_', ' '));
+}
+
+/**
+ * Returns true if any identification in the AI response describes a human or
+ * human body part (e.g. human, person, hand, arm, child, adult).
+ */
+export function isHumanIdentification(
+  identification: BirdIdentification | BirdIdentification[] | null | undefined,
+): boolean {
+  if (!identification) return false;
+  const list = Array.isArray(identification) ? identification : [identification];
+  return list.some(ident => isHumanLabel(ident.non_bird_species) || isHumanLabel(ident.species));
+}
+
+/**
+ * Remove a discarded clip's video and thumbnail files from disk, logging on failure.
+ */
+function discardClipFiles(clip: Clip): void {
+  for (const filePath of [clip.localVideoPath, clip.localThumbnailPath]) {
+    if (!filePath) continue;
+    try {
+      fs.rmSync(filePath, { force: true });
+    } catch (error) {
+      console.error(`Error removing discarded file ${filePath}:`, error);
+    }
+  }
+}
 
 /**
  * Discards clips whose timestamp falls within cooldownSeconds after the
@@ -38,14 +115,7 @@ export function applyCooldown(clips: Clip[], lastProcessedMs: number | null, coo
     if (lastMs !== null && clipMs - lastMs < cooldownSeconds * 1000) {
       const diffSeconds = ((clipMs - lastMs) / 1000).toFixed(1);
       console.log(`Discarding clip ${clip.id} (${clip.media}): ${diffSeconds}s since last processed clip, within ${cooldownSeconds}s cooldown`);
-      for (const filePath of [clip.localVideoPath, clip.localThumbnailPath]) {
-        if (!filePath) continue;
-        try {
-          fs.rmSync(filePath, { force: true });
-        } catch (error) {
-          console.error(`Error removing discarded file ${filePath}:`, error);
-        }
-      }
+      discardClipFiles(clip);
       continue;
     }
     lastKeptMs = clipMs;
@@ -57,10 +127,13 @@ export function applyCooldown(clips: Clip[], lastProcessedMs: number | null, coo
 
 /**
  * Process clips: identify birds using AI. Each successful clip gets its
- * birdIdentification set; failed clips are logged and left out of the result.
+ * birdIdentification set; clips identified as human-related objects are
+ * discarded (their video and thumbnail are deleted immediately and they are
+ * not returned for storage); failed clips are logged and left out of the
+ * result so they can be retried on the next tick.
  *
- * @param delayMs - Delay after each AI call (successful or not), to avoid rate limits.
- * @returns Successfully processed clips.
+ * @param delayMs - Delay after each AI call (successful, discarded, or failed), to avoid rate limits.
+ * @returns Successfully processed non-human clips.
  */
 export async function processClips(clips: Clip[], aiProvider: AIProvider, delayMs: number): Promise<Clip[]> {
   const successfulClips: Clip[] = [];
@@ -70,9 +143,14 @@ export async function processClips(clips: Clip[], aiProvider: AIProvider, delayM
       const { id, localThumbnailPath } = clip;
       console.log(`\nProcessing clip ${id} with thumbnail at ${localThumbnailPath}`);
       const aiResponse = await aiProvider.identifyBird(clip, localThumbnailPath!);
-      clip.birdIdentification = aiResponse;
-      successfulClips.push(clip);
-      console.log(`✓ Processed clip ${id} successfully`);
+      if (isHumanIdentification(aiResponse)) {
+        console.log(`Discarding clip ${id} (${clip.media}): identified as human-related object`);
+        discardClipFiles(clip);
+      } else {
+        clip.birdIdentification = aiResponse;
+        successfulClips.push(clip);
+        console.log(`✓ Processed clip ${id} successfully`);
+      }
     } catch (error) {
       console.error(`Error processing clip ${clip.id}:`, error);
     }

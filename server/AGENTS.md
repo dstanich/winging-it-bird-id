@@ -9,7 +9,7 @@ Guidance for working in `server/`. See root [`AGENTS.md`](../AGENTS.md) for proj
   2. `birdnetProvider.syncDetections()` — if enabled
   3. `discoverNewClips()` — scan uploads, extract thumbnails
   4. `applyCooldown()` (`lib/clip-processing.ts`) — if `VIDEO_COOLDOWN_SECONDS` > 0, sorts clips chronologically and discards any whose timestamp falls within that window *after* the later of an earlier clip kept in this batch and the newest stored clip (`storage.getMostRecentClipTimestamp()`, only if at or before it), deleting their video + thumbnail immediately without calling the AI. Avoids burning API calls on motion-triggered bursts of near-duplicate clips. Clips *older* than the stored timestamp (retries of a failed clip, late backlog uploads) are not measured against it, so they aren't discarded (nor checked against older stored clips).
-  5. `processClips()` (`lib/clip-processing.ts`) — sends each thumbnail to Gemini, waiting `PROCESS_DELAY` ms (default 30s) after each call, including failed ones (often rate limits)
+  5. `processClips()` (`lib/clip-processing.ts`) — sends each thumbnail to Gemini, discards any clip whose AI response identifies a human-related object (e.g. human, person, hand, arm, child, adult — deleting its video + thumbnail immediately and omitting it from the result so it is never stored in the DB), and waits `PROCESS_DELAY` ms (default 30s) after each call, including discarded and failed ones (often rate limits)
   6. Stores successful clips, then deletes their uploaded videos. Failed clips keep their video and are retried next tick.
   7. `generateDailyImages()` (`lib/daily-image.ts`) — daily species image (below)
   Each step's errors are caught and logged so one failure doesn't kill the loop.
@@ -57,5 +57,5 @@ Notes:
 - Uses the `fileURLToPath` pattern for a `__dirname` equivalent in ES module code.
 - Logs to stdout with `console.log`/`console.error`; `✓` prefixes successful steps.
 - Camera pushes clips via FTP; no camera polling or cloud auth.
-- Uploaded videos are deleted once successfully processed into a thumbnail + DB row (or when discarded by the cooldown, or found to be duplicates); downloads organized by date: `server/downloads/YYYY/M/D/` (month/day not zero-padded).
+- Uploaded videos are deleted once successfully processed into a thumbnail + DB row (or when discarded by the cooldown or as a human-related clip, or found to be duplicates); downloads organized by date: `server/downloads/YYYY/M/D/` (month/day not zero-padded).
 - BirdNET-Go audio sync is optional and entirely separate from FTP/video processing.
