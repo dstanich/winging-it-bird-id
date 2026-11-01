@@ -107,6 +107,8 @@ Every `bird-developer` task runs on a branch named `dev/<slug>` inside an isolat
      ```bash
      node --check client/scripts/scheduled-publish/index.js
      ```
+   - **Visual Inspection during development (optional)**:
+     - Ad-hoc screenshots may be captured during development or debugging if helpful for visual verification (`cd client && npm run screenshot`). However, the formal set of responsive screenshots intended for the PR itself must be deferred to Step 5.
 4. **Commit with Agent as Author**:
    - Organize work into logical commits using Conventional Commits with a scope (`feat(server): ...`, `fix(client): ...`, `docs: ...`, `chore: ...`). Multiple commits are fine when they aid clarity, but do not go overboard (typically 1–3 commits for a task).
    - The commit must come from the active coding agent (author) instead of the user; the user will then review the PR and merge it as themselves so it will ultimately be authored by both:
@@ -157,7 +159,7 @@ After initial implementation, tests, docs, and commits are complete, run the `bi
 ### Step 5: Capture UI Screenshots & Prepare or Publish the Pull Request
 
 > [!IMPORTANT]
-> Do NOT capture screenshots during Step 3 or during the `bird-reviewer` validation loop in Step 4. Screenshots must only be taken after all `bird-reviewer` review cycles are complete, just prior to opening the PR or summarizing the PR in the session.
+> The formal screenshots intended for the Pull Request (capturing desktop, tablet, and mobile layouts to attach to the PR or session summary) must only be taken here in Step 5 after all `bird-reviewer` review cycles and follow-up fix commits are finished. Ad-hoc screenshots during Step 3 or Step 4 are permitted if needed for development or review verification, but final PR screenshots must be deferred until just prior to opening or summarizing the PR.
 
 1. **Capture UI Screenshots (for User-Facing UI Changes Across All Screen Sizes)**:
    - When changes affect client UI (pages, components, responsive layout, styling):
